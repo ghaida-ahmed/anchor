@@ -1,0 +1,81 @@
+# ---- Environment & secrets -------------------------------------------------
+# A bare `.env` pattern matches at any depth, so backend/.env and frontend/.env
+# are both covered. They are listed explicitly anyway: this is the one rule in
+# the file whose failure would leak a real API key, and it should be impossible
+# to misread.
+.env
+.env.*
+!.env.example
+backend/.env
+frontend/.env
+
+# Anything that looks like a credential dropped into the tree.
+*.pem
+*.key
+!**/public/**/*.key
+secrets.json
+credentials.json
+service-account*.json
+
+# ---- Python ----------------------------------------------------------------
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+*.egg-info/
+
+# Coverage artefacts
+.coverage
+.coverage.*
+coverage.xml
+htmlcov/
+junit*.xml
+
+# ---- Node ------------------------------------------------------------------
+node_modules/
+dist/
+build/
+*.tsbuildinfo
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+.vite/
+coverage/
+
+# ---- Uploads & local data --------------------------------------------------
+# Course documents are private user data and must never be committed.
+# backend/storage/.gitignore keeps the directory itself present in a clone.
+uploads/
+backend/storage/documents/
+*.sqlite3
+*.db
+
+# Database dumps
+*.dump
+*.sql.gz
+*.bak
+
+# ---- Logs & temporary files ------------------------------------------------
+*.log
+logs/
+tmp/
+.tmp/
+*.pid
+
+# ---- Editors, tooling & OS -------------------------------------------------
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+# Local Claude Code tooling config (launch profiles, local settings).
+.claude/
+
+# ---- Deliberately NOT ignored ----------------------------------------------
+# backend/alembic/versions/  — migrations are source and must be tracked.
+# .env.example files          — placeholders only, they document the contract.
+# frontend/public/            — real static assets.

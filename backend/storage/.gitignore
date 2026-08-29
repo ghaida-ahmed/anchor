@@ -1,0 +1,4 @@
+# Uploaded course documents are user data — never commit them.
+# This file keeps the directory present in a fresh clone.
+*
+!.gitignore

@@ -1,0 +1,29 @@
+# Runtime dependencies for the ANCHOR API.
+fastapi==0.121.2
+uvicorn[standard]==0.41.0
+sqlalchemy==2.0.46
+psycopg[binary]==3.2.13
+alembic==1.17.1
+pydantic[email]==2.13.1
+pydantic-settings==2.13.0
+
+# Authentication.
+pyjwt==2.11.0
+bcrypt==5.0.0
+
+# Multipart parsing for document uploads.
+python-multipart==0.0.20
+
+# --- Phase 3: document processing and RAG ---------------------------------
+# pgvector's SQLAlchemy integration (the Vector column type).
+pgvector==0.4.2
+# PDF text extraction. Permissively licensed and pure-Python; no OCR.
+pypdf==6.16.2
+# Chunk sizing. Exact for OpenAI models, a close approximation for Gemini.
+tiktoken==0.12.0
+
+# --- AI providers ----------------------------------------------------------
+# Gemini is the default provider (embeddings + generation).
+google-genai==2.20.0
+# OpenAI remains supported as an optional provider, selected by configuration.
+openai==3.5.0

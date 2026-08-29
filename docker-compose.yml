@@ -1,0 +1,50 @@
+# Development stack for ANCHOR.
+#
+# Runs PostgreSQL and the API. The frontend is run natively with `npm run dev` —
+# Vite's file watching and HMR are noticeably better outside a container, and the
+# dev server already proxies /api to the API on port 8000.
+#
+# Usage: docker compose up --build
+
+services:
+  db:
+    # pgvector's image is stock PostgreSQL 17 plus the `vector` extension, so the
+    # same database serves relational data and (from Phase 3) embeddings.
+    image: pgvector/pgvector:pg17
+    container_name: anchor-db
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-anchor}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-anchor}
+      POSTGRES_DB: ${POSTGRES_DB:-anchor}
+    ports:
+      - '${POSTGRES_PORT:-5432}:5432'
+    volumes:
+      - anchor-pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U ${POSTGRES_USER:-anchor} -d ${POSTGRES_DB:-anchor}']
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  api:
+    build: ./backend
+    container_name: anchor-api
+    environment:
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-anchor}:${POSTGRES_PASSWORD:-anchor}@db:5432/${POSTGRES_DB:-anchor}
+      ENVIRONMENT: development
+      CORS_ORIGINS: '["http://localhost:5173"]'
+    ports:
+      - '8000:8000'
+    depends_on:
+      db:
+        condition: service_healthy
+    volumes:
+      # Bind-mount for reload during development; drop this for a production image.
+      - ./backend:/app
+      # Uploaded documents live outside the image so they survive rebuilds.
+      - anchor-uploads:/app/storage
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+
+volumes:
+  anchor-pgdata:
+  anchor-uploads:

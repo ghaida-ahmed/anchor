@@ -1,0 +1,21 @@
+[project]
+name = "anchor-backend"
+version = "0.1.0"
+description = "ANCHOR — AI-powered adaptive learning. FastAPI service."
+requires-python = ">=3.11"
+
+[tool.pytest.ini_options]
+testpaths = ["app/tests"]
+pythonpath = ["."]
+
+[tool.ruff]
+line-length = 90
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM"]
+# Unused arguments are expected in the Phase 1 service stubs.
+ignore = ["B008"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["app"]
