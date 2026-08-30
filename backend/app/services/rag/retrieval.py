@@ -27,7 +27,13 @@ from sqlalchemy import Select, select
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
-from app.models import Course, Document, DocumentChunk, ProcessingStatus
+from app.models import (
+    Course,
+    Document,
+    DocumentChunk,
+    DocumentFileType,
+    ProcessingStatus,
+)
 
 
 @dataclass(frozen=True)
@@ -42,6 +48,12 @@ class RetrievedChunk:
     content: str
     # Cosine similarity in [-1, 1]; 1 is identical. Derived as 1 - cosine distance.
     similarity: float
+    # The source document's format, carried so a citation can tell a real page
+    # number from a placeholder one. TXT and Markdown are stored as page 1 because
+    # a chunk needs *some* value; showing that as "page 1" would be an invented
+    # precision. The retrieval query already joins `documents`, so this costs
+    # nothing. None where the constructing code has no document to hand.
+    file_type: str | None = None
 
     @property
     def distance(self) -> float:
@@ -73,6 +85,7 @@ class RetrievalService:
                 DocumentChunk.id,
                 DocumentChunk.document_id,
                 Document.filename,
+                Document.file_type,
                 DocumentChunk.page_number,
                 DocumentChunk.chunk_index,
                 DocumentChunk.content,
@@ -117,6 +130,9 @@ class RetrievalService:
                 chunk_index=row.chunk_index,
                 content=row.content,
                 similarity=1.0 - float(row.distance),
+                file_type=row.file_type.value
+                if hasattr(row.file_type, "value")
+                else row.file_type,
             )
             for row in rows
         ]
@@ -143,3 +159,18 @@ class RetrievalService:
             )
             or 0
         )
+
+
+def page_number_for(
+    chunk: RetrievedChunk, file_type: DocumentFileType | str
+) -> int | None:
+    """The page to display for a citation, or None when the format has no pages.
+
+    TXT and Markdown files are stored as a single page 1 because chunks need *some*
+    page value. Showing "page 1" for them would be a fabricated precision, so this
+    returns None and the UI omits it.
+    """
+    value = file_type.value if isinstance(file_type, DocumentFileType) else str(file_type)
+    if value in ("txt", "md"):
+        return None
+    return chunk.page_number

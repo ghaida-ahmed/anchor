@@ -19,6 +19,7 @@ from app.schemas import (
     SearchResponse,
     SearchResult,
 )
+from app.services.rag.retrieval import page_number_for
 
 router = APIRouter(prefix="/courses/{course_id}", tags=["ai-tutor"])
 
@@ -58,7 +59,9 @@ def search_course(
                 chunk_id=chunk.chunk_id,
                 document_id=chunk.document_id,
                 document_name=chunk.document_name,
-                page_number=chunk.page_number,
+                # Same rule as every other citation surface: a TXT or Markdown
+                # chunk has no real page, so it reports None rather than 1.
+                page_number=page_number_for(chunk, chunk.file_type or ""),
                 chunk_index=chunk.chunk_index,
                 content=chunk.content,
                 similarity=round(chunk.similarity, 6),

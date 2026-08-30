@@ -130,8 +130,12 @@ class TestCitations:
             client, token, course_id, "congestion window halved packet loss"
         ).json()
 
+        # Provenance comes from our rows, never from the model's prose.
         assert all(c["document_name"] == "transport.txt" for c in body["citations"])
-        assert all(c["page_number"] == 1 for c in body["citations"])
+        # None rather than 999 — and none rather than 1, which this previously
+        # asserted. A TXT file has no pages, so any number here would be invented,
+        # whether the model made it up or the column defaulted to it.
+        assert all(c["page_number"] is None for c in body["citations"])
 
 
 class TestNoAnswerFallback:
@@ -303,3 +307,126 @@ class TestWeakMatchFiltering:
 
         assert body["citations"]
         assert all(c["document_name"] == "transport.txt" for c in body["citations"])
+
+
+class TestCitationPageNumbers:
+    """A citation must never claim a page the source does not have.
+
+    TXT and Markdown chunks are stored as page 1 because a chunk needs *some*
+    value. Reporting that as "page 1" is invented precision, and the README says
+    it is omitted. The quiz, flashcard, knowledge-map and study-guide surfaces
+    already did this through `page_number_for`; `/ask` and `/search` passed the
+    raw column and showed "p1" for a text file. Both directions are pinned here
+    so the two paths cannot drift apart again.
+    """
+
+    def test_a_txt_citation_reports_no_page(
+        self, client: TestClient, token: str, course_id: str, llm: FakeLLMProvider
+    ) -> None:
+        upload(client, token, course_id, "transport.txt", TRANSPORT_NOTES)
+        llm.answer = "The window is halved."
+
+        citations = ask(
+            client, token, course_id, "congestion window halved packet loss"
+        ).json()["citations"]
+
+        assert citations, "expected at least one citation"
+        for citation in citations:
+            assert citation["document_name"].endswith(".txt")
+            assert citation["page_number"] is None, (
+                "a TXT file has no pages; 1 would be fabricated"
+            )
+
+    def test_a_markdown_citation_reports_no_page(
+        self, client: TestClient, token: str, course_id: str, llm: FakeLLMProvider
+    ) -> None:
+        upload(client, token, course_id, "transport.md", TRANSPORT_NOTES)
+        llm.answer = "The window is halved."
+
+        citations = ask(
+            client, token, course_id, "congestion window halved packet loss"
+        ).json()["citations"]
+        assert citations
+        assert all(c["page_number"] is None for c in citations)
+
+    def test_a_pdf_citation_keeps_its_real_page(
+        self, client: TestClient, token: str, course_id: str, llm: FakeLLMProvider
+    ) -> None:
+        """The fix must not throw away genuine page numbers."""
+        pdf = make_text_pdf(
+            [
+                "Introduction to reliable transport and acknowledgements.",
+                "When packet loss is detected the congestion window is halved, "
+                "which drains the bottleneck queue.",
+            ]
+        )
+        upload(client, token, course_id, "lecture.pdf", pdf)
+        llm.answer = "The window is halved."
+
+        citations = ask(
+            client, token, course_id, "congestion window halved packet loss"
+        ).json()["citations"]
+        assert citations
+        for citation in citations:
+            assert citation["document_name"].endswith(".pdf")
+            assert isinstance(citation["page_number"], int)
+            assert citation["page_number"] >= 1
+
+    def test_search_results_follow_the_same_rule(
+        self, client: TestClient, token: str, course_id: str
+    ) -> None:
+        """`/search` builds its own result shape and had the same bug."""
+        upload(client, token, course_id, "transport.txt", TRANSPORT_NOTES)
+
+        response = client.post(
+            f"/api/v1/courses/{course_id}/search",
+            json={"query": "congestion window halved", "top_k": 3},
+            headers=auth(token),
+        )
+        assert response.status_code == 200
+        results = response.json()["results"]
+        assert results
+        assert all(r["page_number"] is None for r in results)
+
+    def test_search_keeps_pdf_pages(
+        self, client: TestClient, token: str, course_id: str
+    ) -> None:
+        pdf = make_text_pdf(
+            [
+                "Reliable transport and acknowledgements.",
+                "The congestion window is halved when loss is detected.",
+            ]
+        )
+        upload(client, token, course_id, "lecture.pdf", pdf)
+
+        results = client.post(
+            f"/api/v1/courses/{course_id}/search",
+            json={"query": "congestion window halved", "top_k": 3},
+            headers=auth(token),
+        ).json()["results"]
+        assert results
+        assert all(isinstance(r["page_number"], int) for r in results)
+
+    def test_the_retrieved_chunk_carries_the_file_type(
+        self, client: TestClient, token: str, course_id: str, session
+    ) -> None:
+        """`page_number_for` needs the format. Taking it from the retrieval join
+        avoids a second query per citation."""
+        import uuid as _uuid
+
+        from app.services.rag.retrieval import RetrievalService
+        from app.tests.fakes import FakeEmbeddingProvider
+
+        upload(client, token, course_id, "transport.txt", TRANSPORT_NOTES)
+        user_id = _uuid.UUID(
+            client.get("/api/v1/auth/me", headers=auth(token)).json()["id"]
+        )
+
+        chunks = RetrievalService(session).search(
+            user_id,
+            _uuid.UUID(course_id),
+            FakeEmbeddingProvider().embed_query("congestion window"),
+            top_k=3,
+        )
+        assert chunks
+        assert all(chunk.file_type == "txt" for chunk in chunks)

@@ -5,7 +5,7 @@ interface SearchResultDto {
   chunk_id: string;
   document_id: string;
   document_name: string;
-  page_number: number;
+  page_number: number | null;
   chunk_index: number;
   content: string;
   similarity: number;
@@ -21,7 +21,7 @@ interface CitationDto {
   chunk_id: string;
   document_id: string;
   document_name: string;
-  page_number: number;
+  page_number: number | null;
   excerpt: string;
 }
 
@@ -35,7 +35,8 @@ export interface SearchResult {
   chunkId: string;
   documentId: string;
   documentName: string;
-  pageNumber: number;
+  /** Null for formats without real pages (TXT, Markdown) — never a fabricated 1. */
+  pageNumber: number | null;
   chunkIndex: number;
   content: string;
   similarity: number;
@@ -45,7 +46,8 @@ export interface Citation {
   chunkId: string;
   documentId: string;
   documentName: string;
-  pageNumber: number;
+  /** Null for formats without real pages (TXT, Markdown) — never a fabricated 1. */
+  pageNumber: number | null;
   excerpt: string;
 }
 

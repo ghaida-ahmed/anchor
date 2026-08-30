@@ -55,9 +55,14 @@ function CitationRow({ citation }: { citation: Citation }) {
         <div className="min-w-0 flex-1">
           <p className="truncate text-xs font-medium text-ink-800">
             {citation.documentName}
-            <span className="tabular ml-2 font-normal text-ink-400">
-              page {citation.pageNumber}
-            </span>
+            {/* Omitted for formats with no real pages (TXT, Markdown), where the
+                backend sends null rather than a fabricated 1. Rendering it
+                unconditionally would print a bare "page " with nothing after it. */}
+            {citation.pageNumber !== null ? (
+              <span className="tabular ml-2 font-normal text-ink-400">
+                page {citation.pageNumber}
+              </span>
+            ) : null}
           </p>
           <p className="mt-0.5 line-clamp-2 text-xs text-ink-500">{citation.excerpt}</p>
           {error ? <p className="mt-1 text-xs text-signal-danger">{error}</p> : null}

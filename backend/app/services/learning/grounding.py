@@ -15,8 +15,7 @@ can do is cite an excerpt index, and an index we did not supply is rejected.
 from dataclasses import dataclass
 
 from app.core.exceptions import AnchorError
-from app.models import DocumentFileType
-from app.services.rag.retrieval import RetrievedChunk
+from app.services.rag.retrieval import RetrievedChunk, page_number_for
 
 
 class InsufficientMaterialError(AnchorError):
@@ -69,16 +68,13 @@ def build_grounding_context(
     return GroundingContext(text="\n\n".join(blocks), chunks=used)
 
 
-def page_number_for(
-    chunk: RetrievedChunk, file_type: DocumentFileType | str
-) -> int | None:
-    """The page to display for a citation, or None when the format has no pages.
-
-    TXT and Markdown files are stored as a single page 1 because chunks need *some*
-    page value. Showing "page 1" for them would be a fabricated precision, so this
-    returns None and the UI omits it.
-    """
-    value = file_type.value if isinstance(file_type, DocumentFileType) else str(file_type)
-    if value in ("txt", "md"):
-        return None
-    return chunk.page_number
+# Re-exported from the RAG layer, where it lives beside `RetrievedChunk`.
+# It was defined here first, but `services/rag` must not import from
+# `services/learning` — the dependency runs the other way, and importing it back
+# created a cycle. Kept in this namespace so existing callers are unaffected.
+__all__ = [
+    "GroundingContext",
+    "InsufficientMaterialError",
+    "build_grounding_context",
+    "page_number_for",
+]

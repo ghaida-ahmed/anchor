@@ -31,7 +31,11 @@ from app.services.rag.generation import (
     build_context,
     build_messages,
 )
-from app.services.rag.retrieval import RetrievalService, RetrievedChunk
+from app.services.rag.retrieval import (
+    RetrievalService,
+    RetrievedChunk,
+    page_number_for,  # noqa: F401
+)
 
 
 @dataclass(frozen=True)
@@ -41,7 +45,8 @@ class Citation:
     chunk_id: uuid.UUID
     document_id: uuid.UUID
     document_name: str
-    page_number: int
+    # None for formats without real pages (TXT, Markdown). See `page_number_for`.
+    page_number: int | None
     excerpt: str
 
 
@@ -87,7 +92,11 @@ def _to_citation(chunk: RetrievedChunk) -> Citation:
         chunk_id=chunk.chunk_id,
         document_id=chunk.document_id,
         document_name=chunk.document_name,
-        page_number=chunk.page_number,
+        # The same helper the quiz, flashcard, knowledge-map and study-guide
+        # citations use. TXT and Markdown are stored as page 1 because a chunk
+        # needs some value; reporting that as a page would be a precision the
+        # source does not have.
+        page_number=page_number_for(chunk, chunk.file_type or ""),
         excerpt=excerpt,
     )
 

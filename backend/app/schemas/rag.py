@@ -31,7 +31,8 @@ class SearchResult(BaseModel):
     chunk_id: uuid.UUID
     document_id: uuid.UUID
     document_name: str
-    page_number: int
+    # None for formats without real pages (TXT, Markdown) — never a fabricated 1.
+    page_number: int | None
     chunk_index: int
     content: str
     # Cosine similarity in [-1, 1]; higher is closer.
@@ -60,7 +61,8 @@ class CitationRead(BaseModel):
     chunk_id: uuid.UUID
     document_id: uuid.UUID
     document_name: str
-    page_number: int
+    # None for formats without real pages (TXT, Markdown) — never a fabricated 1.
+    page_number: int | None
     excerpt: str
 
 
