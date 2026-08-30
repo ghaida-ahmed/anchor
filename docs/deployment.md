@@ -104,22 +104,64 @@ psycopg's prepared statements automatically — without that you get intermitten
 4. Create.
 
 You do not need to add any RLS policies. ANCHOR reaches the bucket with the
-service role key and enforces ownership itself, in the same SQL queries that
+project's secret key and enforces ownership itself, in the same SQL queries that
 already protect every other route.
 
-## 5. Supabase — collect the API values
+## 5. Supabase — collect the URL and the secret key
 
-**Project Settings → API keys** (or **Connect → App Frameworks**):
+**Project Settings → API Keys** (and **Settings → General** for the project ref).
 
 | What to copy | Goes into the variable |
 |---|---|
-| **Project URL** (`https://<ref>.supabase.co`) | `SUPABASE_URL` |
-| **`service_role` secret key** — click *Reveal* | `SUPABASE_SERVICE_ROLE_KEY` |
+| **Project URL** — `https://<project-ref>.supabase.co` | `SUPABASE_URL` |
+| **Secret key** — `sb_secret_...`, click *Reveal* | `SUPABASE_SECRET_KEY` |
 
-⚠️ **The `service_role` key bypasses every security rule in the project.** It goes
-into Render and nowhere else. Never into Vercel, never into a `VITE_` variable,
-never into this repository. The `anon` / publishable key is *not* used by ANCHOR
-at all — you can ignore it.
+### About the key format
+
+Supabase's current dashboard issues **opaque secret keys** (`sb_secret_...`) in
+place of the legacy `service_role` JWT. ANCHOR works with either: the key is a
+bearer credential forwarded verbatim in the `Authorization` and `apikey` headers,
+and nothing in the codebase parses or inspects it. That is why a key-format change
+is a configuration change here and not a code change.
+
+`SUPABASE_SECRET_KEY` is the name to use. `SUPABASE_SERVICE_ROLE_KEY` is still
+accepted as a deprecated alias so an older deployment keeps working; if both are
+set, the newer name wins.
+
+⚠️ Either key **bypasses every security rule in the project**. It goes into Render
+and nowhere else — never into Vercel, never into a `VITE_` variable, never into
+this repository. The *publishable* key (`sb_publishable_...`, formerly `anon`) is
+not used by ANCHOR at all.
+
+### Finding the Project URL with the Data API disabled
+
+Leave the Data API off. **It is not required for Storage**, and turning it on
+would expose your tables over PostgREST for no benefit — ANCHOR reaches Postgres
+through SQLAlchemy on `DATABASE_URL`, never over HTTP.
+
+The project URL is one host that fronts several independent services, each on its
+own path prefix:
+
+| Prefix | Service | Used by ANCHOR? |
+|---|---|---|
+| `/storage/v1/` | Storage | **Yes** — this is the only one |
+| `/rest/v1/` | PostgREST — the "Data API" toggle | No |
+| `/auth/v1/` | Supabase Auth | No |
+
+So `SUPABASE_URL` is just `https://<project-ref>.supabase.co`, with no path. If
+the API settings page hides the URL while the Data API is off, you can build it
+from the project ref, which appears in **Settings → General** and in your browser's
+address bar (`.../project/<project-ref>/...`).
+
+Sanity check it without revealing anything — Storage answers even with the Data
+API disabled:
+
+```bash
+curl -s -o /dev/null -w '%{http_code}\n' https://<project-ref>.supabase.co/storage/v1/version
+```
+
+A `200` or `401` both prove the host and the Storage service are reachable (`401`
+simply means you sent no key). A DNS failure means the URL is wrong.
 
 ---
 
@@ -155,7 +197,7 @@ at all — you can ignore it.
    | `GEMINI_API_KEY` | your existing key |
    | `STORAGE_BACKEND` | `supabase` |
    | `SUPABASE_URL` | from step 5 |
-   | `SUPABASE_SERVICE_ROLE_KEY` | from step 5 |
+   | `SUPABASE_SECRET_KEY` | from step 5 (`sb_secret_...`) |
    | `SUPABASE_STORAGE_BUCKET` | `course-documents` |
 
    Generate the signing key on your own machine and paste it straight into Render:

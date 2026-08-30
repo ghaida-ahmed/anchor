@@ -51,7 +51,9 @@ services:
       - key: SUPABASE_URL
         sync: false
       # Backend-only. Bypasses row-level security; never give this a VITE_ prefix.
-      - key: SUPABASE_SERVICE_ROLE_KEY
+      # Opaque `sb_secret_...` key from the dashboard, or a legacy service_role
+      # JWT — the backend forwards either verbatim and never parses it.
+      - key: SUPABASE_SECRET_KEY
         sync: false
       - key: SUPABASE_STORAGE_BUCKET
         value: course-documents

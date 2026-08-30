@@ -68,7 +68,8 @@ class FakeHttpClient:
 @pytest.fixture
 def supabase_configured(monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setattr(settings, "SUPABASE_URL", BASE_URL)
-    monkeypatch.setattr(settings, "SUPABASE_SERVICE_ROLE_KEY", "service-role-test-value")
+    monkeypatch.setattr(settings, "SUPABASE_SECRET_KEY", "sb_secret_test_value")
+    monkeypatch.setattr(settings, "SUPABASE_SERVICE_ROLE_KEY", None)
     monkeypatch.setattr(settings, "SUPABASE_STORAGE_BUCKET", BUCKET)
 
 
@@ -268,7 +269,7 @@ class TestSupabaseSafety:
         client = FakeHttpClient(get=FakeResponse(200, b"x"))
         supabase(client).open("course/doc.pdf")
         _, url = client.requests[0]
-        assert "service-role-test-value" not in url
+        assert "sb_secret_test_value" not in url
 
     def test_no_public_or_signed_url_is_ever_produced(self) -> None:
         """Bytes are streamed through FastAPI so the ownership check stays the
@@ -284,6 +285,7 @@ class TestConfiguration:
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         monkeypatch.setattr(settings, "SUPABASE_URL", None)
+        monkeypatch.setattr(settings, "SUPABASE_SECRET_KEY", None)
         monkeypatch.setattr(settings, "SUPABASE_SERVICE_ROLE_KEY", None)
 
         with pytest.raises(StorageError) as caught:
@@ -291,13 +293,14 @@ class TestConfiguration:
 
         message = str(caught.value)
         assert "SUPABASE_URL" in message
-        assert "SUPABASE_SERVICE_ROLE_KEY" in message
+        assert "SUPABASE_SECRET_KEY" in message
 
     def test_the_configuration_error_names_variables_not_values(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         """This message reaches logs."""
         monkeypatch.setattr(settings, "SUPABASE_URL", BASE_URL)
+        monkeypatch.setattr(settings, "SUPABASE_SECRET_KEY", None)
         monkeypatch.setattr(settings, "SUPABASE_SERVICE_ROLE_KEY", None)
         monkeypatch.setattr(settings, "SUPABASE_STORAGE_BUCKET", BUCKET)
 
@@ -337,3 +340,62 @@ class TestBothBackendsImplementTheInterface:
         assert required <= set(StorageService.__abstractmethods__) | {
             name for name in dir(StorageService) if not name.startswith("_")
         }
+
+
+class TestKeyNaming:
+    """Supabase replaced the `service_role` JWT with opaque `sb_secret_...` keys.
+
+    Both are bearer credentials used identically, so ANCHOR accepts either and
+    never inspects the value — a key-format change is configuration, not code.
+    """
+
+    def test_the_new_secret_key_is_used(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setattr(settings, "SUPABASE_SECRET_KEY", "sb_secret_new")
+        monkeypatch.setattr(settings, "SUPABASE_SERVICE_ROLE_KEY", None)
+        assert settings.supabase_key == "sb_secret_new"
+
+    def test_the_legacy_name_still_works(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """An existing deployment must not break on upgrade."""
+        monkeypatch.setattr(settings, "SUPABASE_SECRET_KEY", None)
+        monkeypatch.setattr(settings, "SUPABASE_SERVICE_ROLE_KEY", "legacy-jwt-value")
+        assert settings.supabase_key == "legacy-jwt-value"
+
+    def test_the_new_name_wins_when_both_are_set(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr(settings, "SUPABASE_SECRET_KEY", "sb_secret_new")
+        monkeypatch.setattr(settings, "SUPABASE_SERVICE_ROLE_KEY", "legacy-jwt-value")
+        assert settings.supabase_key == "sb_secret_new"
+
+    @pytest.mark.parametrize(
+        "key",
+        ["sb_secret_abc123", "eyJhbGciOiJIUzI1NiJ9.legacy.jwt"],
+        ids=["opaque-secret-key", "legacy-service-role-jwt"],
+    )
+    def test_both_key_formats_produce_identical_headers(
+        self, key: str, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """The value is forwarded verbatim in both headers and never parsed.
+
+        This is the real guarantee behind "a key-format change is configuration,
+        not code": whatever Supabase issues next arrives here as an opaque string
+        and is passed straight through.
+        """
+        monkeypatch.setattr(settings, "SUPABASE_URL", BASE_URL)
+        monkeypatch.setattr(settings, "SUPABASE_STORAGE_BUCKET", BUCKET)
+        monkeypatch.setattr(settings, "SUPABASE_SECRET_KEY", key)
+        monkeypatch.setattr(settings, "SUPABASE_SERVICE_ROLE_KEY", None)
+
+        captured: dict = {}
+
+        def fake_client(timeout, headers):
+            captured.update(headers)
+            return FakeHttpClient(get=FakeResponse(200, b"x"))
+
+        import httpx
+
+        monkeypatch.setattr(httpx, "Client", fake_client)
+        SupabaseStorageService()
+
+        assert captured["Authorization"] == f"Bearer {key}"
+        assert captured["apikey"] == key

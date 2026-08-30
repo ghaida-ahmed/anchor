@@ -180,9 +180,19 @@ class SupabaseStorageService(StorageService):
     the Postgres and Auth surface — ANCHOR deliberately does not use: the database
     is reached through SQLAlchemy and authentication is ANCHOR's own.
 
-    The bucket MUST be private. Requests authenticate with the service role key,
-    which is why that key never leaves the backend: it bypasses row-level security
-    and can read every object in the project.
+    The bucket MUST be private. Requests authenticate with the project's
+    privileged key, which is why it never leaves the backend: it bypasses
+    row-level security and can read every object in the project.
+
+    KEY FORMAT IS NOT THIS CLASS'S BUSINESS. Supabase's current dashboard issues
+    opaque secret keys (`sb_secret_...`) in place of the legacy `service_role`
+    JWT. Both are used the same way — a bearer credential in the Authorization
+    and apikey headers — so the value is forwarded verbatim and never parsed.
+    That is what makes the key rotation a configuration change rather than a code
+    change. `settings.supabase_key` resolves whichever variable is set.
+
+    The Data API (PostgREST, /rest/v1/) can stay disabled: Storage is a separate
+    service on /storage/v1/ and does not depend on it.
     """
 
     # Long enough for a 25 MB upload on a slow connection, short enough that a
@@ -194,7 +204,7 @@ class SupabaseStorageService(StorageService):
             name
             for name, value in (
                 ("SUPABASE_URL", settings.SUPABASE_URL),
-                ("SUPABASE_SERVICE_ROLE_KEY", settings.SUPABASE_SERVICE_ROLE_KEY),
+                ("SUPABASE_SECRET_KEY", settings.supabase_key),
                 ("SUPABASE_STORAGE_BUCKET", settings.SUPABASE_STORAGE_BUCKET),
             )
             if not value
@@ -215,12 +225,15 @@ class SupabaseStorageService(StorageService):
 
         import httpx
 
+        key = settings.supabase_key
         self._client = httpx.Client(
             timeout=self.TIMEOUT_SECONDS,
             headers={
-                "Authorization": f"Bearer {settings.SUPABASE_SERVICE_ROLE_KEY}",
-                # Supabase accepts either header; both are the service role key.
-                "apikey": settings.SUPABASE_SERVICE_ROLE_KEY,
+                # Storage reads the credential from Authorization; `apikey` is sent
+                # too because the gateway in front of it expects one. Both carry
+                # the same value, which is what the Supabase clients do.
+                "Authorization": f"Bearer {key}",
+                "apikey": key,
             },
         )
 

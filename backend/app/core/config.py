@@ -77,11 +77,29 @@ class Settings(BaseSettings):
     # does not use the Supabase client for database access — Postgres is reached
     # through SQLAlchemy on DATABASE_URL exactly as before.
     #
-    # SUPABASE_SERVICE_ROLE_KEY bypasses row-level security and can read every
-    # object in the project. It is a BACKEND-ONLY secret: it must never be given a
-    # VITE_ prefix, never be sent to the frontend, and never appear in a build.
+    # SUPABASE_URL is the project's base URL, https://<project-ref>.supabase.co.
+    # It fronts every Supabase service on its own path prefix — Storage lives at
+    # /storage/v1/. The "Data API" toggle controls PostgREST at /rest/v1/ ONLY, so
+    # Storage works with the Data API disabled and ANCHOR never needs it enabled.
     SUPABASE_URL: str | None = None
+
+    # The backend's privileged Supabase key.
+    #
+    # Supabase's current dashboard issues opaque secret keys (`sb_secret_...`),
+    # replacing the legacy `service_role` JWT. Both are used identically — an
+    # opaque bearer credential in the Authorization and apikey headers — so
+    # ANCHOR accepts either and never inspects the value.
+    #
+    # SUPABASE_SECRET_KEY is the name to use. SUPABASE_SERVICE_ROLE_KEY is kept
+    # as a deprecated fallback so an existing deployment keeps working; when both
+    # are set the newer name wins.
+    #
+    # Either way this bypasses row-level security and can read every object in the
+    # project. It is a BACKEND-ONLY secret: never a VITE_ prefix, never sent to
+    # the frontend, never in a build.
+    SUPABASE_SECRET_KEY: str | None = None
     SUPABASE_SERVICE_ROLE_KEY: str | None = None
+
     SUPABASE_STORAGE_BUCKET: str = "course-documents"
 
     # --- Rate limiting -------------------------------------------------------
@@ -197,6 +215,15 @@ class Settings(BaseSettings):
     MAX_QUESTION_CHARS: int = 1000
 
     @property
+    def supabase_key(self) -> str | None:
+        """The key Storage authenticates with.
+
+        One accessor so no caller has to know both names exist, and adding a third
+        naming change later touches this line alone.
+        """
+        return self.SUPABASE_SECRET_KEY or self.SUPABASE_SERVICE_ROLE_KEY
+
+    @property
     def is_production(self) -> bool:
         """True outside development. Staging is held to production's rules —
         a staging box on the public internet with a dev secret is still a
@@ -308,7 +335,7 @@ class Settings(BaseSettings):
                 name
                 for name, value in (
                     ("SUPABASE_URL", self.SUPABASE_URL),
-                    ("SUPABASE_SERVICE_ROLE_KEY", self.SUPABASE_SERVICE_ROLE_KEY),
+                    ("SUPABASE_SECRET_KEY", self.supabase_key),
                     ("SUPABASE_STORAGE_BUCKET", self.SUPABASE_STORAGE_BUCKET),
                 )
                 if not value
