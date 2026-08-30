@@ -7,7 +7,7 @@ and a button, not a surprise bill.
 
 import uuid
 
-from fastapi import APIRouter, status
+from fastapi import APIRouter, Depends, status
 from sqlalchemy.orm import Session
 
 from app.api.deps import (
@@ -16,6 +16,7 @@ from app.api.deps import (
     MasteryServiceDep,
     SessionDep,
 )
+from app.core.rate_limit import rate_limit_ai
 from app.models import Document, DocumentChunk, TopicRelationship
 from app.schemas import (
     KnowledgeEdgeRead,
@@ -152,6 +153,7 @@ def read_knowledge_map(
 
 @router.post(
     "/courses/{course_id}/knowledge-map",
+    dependencies=[Depends(rate_limit_ai)],
     response_model=KnowledgeMapGenerateResponse,
     status_code=status.HTTP_201_CREATED,
     responses=_RESPONSES,

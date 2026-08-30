@@ -8,7 +8,7 @@ queries rather than fetched and checked afterwards.
 
 import uuid
 
-from fastapi import APIRouter, status
+from fastapi import APIRouter, Depends, status
 from sqlalchemy.orm import Session
 
 from app.api.deps import (
@@ -21,6 +21,7 @@ from app.api.deps import (
     TopicServiceDep,
 )
 from app.core.clock import now
+from app.core.rate_limit import rate_limit_ai
 from app.models import (
     Document,
     DocumentChunk,
@@ -205,6 +206,7 @@ def list_topics(
 
 @router.post(
     "/courses/{course_id}/topics/extract",
+    dependencies=[Depends(rate_limit_ai)],
     response_model=TopicExtractionResponse,
     responses=_RESPONSES,
     summary="Derive topics from the course's processed material",
@@ -272,6 +274,7 @@ def list_quizzes(
 
 @router.post(
     "/courses/{course_id}/quizzes",
+    dependencies=[Depends(rate_limit_ai)],
     response_model=QuizDetail,
     status_code=status.HTTP_201_CREATED,
     responses={
@@ -375,6 +378,7 @@ def submit_answer(
 
 @router.post(
     "/attempts/{attempt_id}/short-answers",
+    dependencies=[Depends(rate_limit_ai)],
     response_model=AnswerResult,
     responses=_RESPONSES,
     summary="Submit one written answer and reveal the marking",
@@ -658,6 +662,7 @@ def list_flashcards(
 
 @router.post(
     "/courses/{course_id}/flashcards",
+    dependencies=[Depends(rate_limit_ai)],
     response_model=list[FlashcardRead],
     status_code=status.HTTP_201_CREATED,
     responses={

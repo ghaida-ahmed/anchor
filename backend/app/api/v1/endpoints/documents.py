@@ -8,11 +8,12 @@ than buffered in memory.
 import os
 import uuid
 
-from fastapi import APIRouter, BackgroundTasks, File, UploadFile, status
+from fastapi import APIRouter, BackgroundTasks, Depends, File, UploadFile, status
 from fastapi.responses import FileResponse
 
 from app.api.deps import CurrentUser, DocumentProcessorDep, DocumentServiceDep, StorageDep
 from app.core.exceptions import ResourceNotFoundError
+from app.core.rate_limit import rate_limit_ai
 from app.models import Document
 from app.schemas import DocumentRead
 from app.services import UploadPayload
@@ -120,6 +121,7 @@ def delete_document(
 
 @router.post(
     "/documents/{document_id}/reprocess",
+    dependencies=[Depends(rate_limit_ai)],
     response_model=DocumentRead,
     status_code=status.HTTP_202_ACCEPTED,
     responses={**_AUTH_RESPONSES, **_NOT_FOUND},

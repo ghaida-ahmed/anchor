@@ -5,10 +5,11 @@ action (discard the token). No `/logout` route exists rather than one that prete
 to revoke something. Token revocation would need a denylist — noted in the README.
 """
 
-from fastapi import APIRouter, status
+from fastapi import APIRouter, Depends, status
 
 from app.api.deps import AuthServiceDep, CurrentUser, SessionDep
 from app.core.config import settings
+from app.core.rate_limit import rate_limit_auth
 from app.core.security import TOKEN_TYPE, create_access_token
 from app.models import User
 from app.schemas import (
@@ -32,6 +33,7 @@ def _issue_token(user: User) -> TokenResponse:
 
 @router.post(
     "/register",
+    dependencies=[Depends(rate_limit_auth)],
     response_model=TokenResponse,
     status_code=status.HTTP_201_CREATED,
     responses={status.HTTP_409_CONFLICT: {"description": "Email already registered."}},
@@ -44,6 +46,7 @@ def register(service: AuthServiceDep, payload: RegisterRequest) -> TokenResponse
 
 @router.post(
     "/login",
+    dependencies=[Depends(rate_limit_auth)],
     response_model=TokenResponse,
     responses={status.HTTP_401_UNAUTHORIZED: {"description": "Invalid credentials."}},
     summary="Exchange credentials for an access token",

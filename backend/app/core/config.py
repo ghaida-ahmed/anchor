@@ -14,6 +14,10 @@ _DEV_SECRET = "dev-only-insecure-secret-change-me"
 # RFC 7518 recommends at least 32 bytes for HS256.
 _MIN_SECRET_LENGTH = 32
 
+# The docker-compose credentials. Fine locally, fatal in production — they are in
+# the README, so anyone can read them.
+_DEV_DATABASE_URL = "postgresql+psycopg://anchor:anchor@localhost:5432/anchor"
+
 # Which vendor backs generation and embeddings. Selected by configuration only —
 # no code outside the two provider factories branches on this.
 AIProvider = Literal["gemini", "openai"]
@@ -34,7 +38,16 @@ class Settings(BaseSettings):
 
     # --- Database ------------------------------------------------------------
     # SQLAlchemy URL. Uses the psycopg 3 driver: postgresql+psycopg://...
-    DATABASE_URL: str = "postgresql+psycopg://anchor:anchor@localhost:5432/anchor"
+    DATABASE_URL: str = _DEV_DATABASE_URL
+    # Connection pooling. The defaults suit a single small instance, which is what
+    # a portfolio deployment is. Managed Postgres free tiers cap total connections
+    # low (often 20-30 across every client), so the pool is deliberately smaller
+    # than SQLAlchemy's default of 5+10.
+    DB_POOL_SIZE: int = 5
+    DB_MAX_OVERFLOW: int = 5
+    # Recycle below the provider's idle timeout, or the first query after a quiet
+    # period fails on a connection the server already dropped.
+    DB_POOL_RECYCLE_SECONDS: int = 1800
 
     # --- CORS ----------------------------------------------------------------
     # Origins allowed to call the API from a browser. The Vite dev server by default.
@@ -52,6 +65,36 @@ class Settings(BaseSettings):
     # against the backend package directory.
     UPLOAD_DIR: str = "storage/documents"
     MAX_UPLOAD_BYTES: int = 25 * 1024 * 1024  # 25 MB
+    # Which storage backend serves uploads. `local` writes to UPLOAD_DIR, which is
+    # correct for development and for a deployment with a real persistent disk.
+    # See app/services/storage.py for why this is a setting and not a hard-coded
+    # filesystem call.
+    STORAGE_BACKEND: Literal["local"] = "local"
+
+    # --- Rate limiting -------------------------------------------------------
+    # Requests per window, per client, per bucket. Generous enough that ordinary
+    # navigation never trips them; tight enough that a loop cannot burn an API
+    # quota. See app/core/rate_limit.py.
+    RATE_LIMIT_ENABLED: bool = True
+    # Reads: listing courses, opening a tab, polling a document's status.
+    RATE_LIMIT_READ_PER_MINUTE: int = 240
+    # Writes that cost nothing but a row.
+    RATE_LIMIT_WRITE_PER_MINUTE: int = 60
+    # Anything that calls a model. This is the one that protects the bill.
+    RATE_LIMIT_AI_PER_MINUTE: int = 10
+    RATE_LIMIT_AI_PER_HOUR: int = 60
+    # Credential endpoints, keyed by IP rather than by user.
+    RATE_LIMIT_AUTH_PER_MINUTE: int = 10
+    RATE_LIMIT_AUTH_PER_HOUR: int = 60
+
+    # --- AI cost safeguards --------------------------------------------------
+    # Wall-clock ceiling on a single provider call. Without it a hung connection
+    # holds a worker until the client gives up.
+    AI_REQUEST_TIMEOUT_SECONDS: float = 60.0
+    # Minimum gap between regenerating an expensive artefact for one course. A
+    # study guide costs one call per topic; a double-click should not buy two.
+    KNOWLEDGE_MAP_REGENERATE_COOLDOWN_SECONDS: int = 60
+    STUDY_GUIDE_REGENERATE_COOLDOWN_SECONDS: int = 60
 
     # --- AI providers --------------------------------------------------------
     # Gemini is the default: its free tier makes the project runnable during
@@ -141,6 +184,13 @@ class Settings(BaseSettings):
     MAX_QUESTION_CHARS: int = 1000
 
     @property
+    def is_production(self) -> bool:
+        """True outside development. Staging is held to production's rules —
+        a staging box on the public internet with a dev secret is still a
+        forgeable-token box."""
+        return self.ENVIRONMENT != "development"
+
+    @property
     def embedding_model(self) -> str:
         """Model name for the active embedding provider."""
         return (
@@ -187,6 +237,64 @@ class Settings(BaseSettings):
                 raise ValueError(
                     f"SECRET_KEY must be at least {_MIN_SECRET_LENGTH} characters."
                 )
+
+        return self
+
+    @model_validator(mode="after")
+    def _validate_production_config(self) -> "Settings":
+        """Refuse to start in production with a configuration that is unsafe.
+
+        Fail fast and loudly. Every one of these is a mistake that is silent at
+        startup and expensive later: a debug traceback leaking a query, a CORS
+        wildcard letting any origin spend the student's API quota, a database URL
+        still pointing at the credentials printed in the README.
+
+        Error messages name the VARIABLE and the problem. They never contain the
+        offending value — this text reaches logs, and a log is a place secrets
+        escape from.
+        """
+        if not self.is_production:
+            return self
+
+        problems: list[str] = []
+
+        if self.DEBUG:
+            problems.append(
+                "DEBUG must be false outside development: it turns SQL echo on and "
+                "would put query text, including data, into the logs."
+            )
+
+        if self.DATABASE_URL == _DEV_DATABASE_URL:
+            problems.append(
+                "DATABASE_URL is still the local docker-compose default, whose "
+                "credentials are published in the README. Point it at the "
+                "production database."
+            )
+
+        if not self.CORS_ORIGINS:
+            problems.append(
+                "CORS_ORIGINS is empty. Set it to the frontend's production "
+                "origin(s); the browser cannot call the API otherwise."
+            )
+        if "*" in self.CORS_ORIGINS:
+            problems.append(
+                "CORS_ORIGINS contains '*'. A wildcard cannot be combined with "
+                "credentialed requests, and would let any site call this API with "
+                "a logged-in student's browser."
+            )
+        for origin in self.CORS_ORIGINS:
+            if origin.startswith("http://") and "localhost" not in origin:
+                problems.append(
+                    "CORS_ORIGINS contains a plaintext http:// origin that is not "
+                    "localhost. Bearer tokens would travel unencrypted."
+                )
+                break
+
+        if problems:
+            joined = "\n  - ".join(problems)
+            raise ValueError(
+                f"Invalid configuration for ENVIRONMENT={self.ENVIRONMENT}:\n  - {joined}"
+            )
 
         return self
 

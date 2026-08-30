@@ -7,7 +7,7 @@ STALE and `is_stale` true — readable, labelled, and regenerated only when aske
 
 import uuid
 
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
 from app.api.deps import (
@@ -17,6 +17,7 @@ from app.api.deps import (
     SessionDep,
     StudyGuideServiceDep,
 )
+from app.core.rate_limit import rate_limit_ai
 from app.models import Document, DocumentChunk, StudyGuide, StudyGuideStatus
 from app.schemas import KeyTermRead, SourceRef, StudyGuideRead, StudyGuideSectionRead
 from app.services.learning.grounding import page_number_for
@@ -153,6 +154,7 @@ def read_study_guide(
 
 @router.post(
     "/courses/{course_id}/study-guide",
+    dependencies=[Depends(rate_limit_ai)],
     response_model=StudyGuideRead,
     status_code=status.HTTP_201_CREATED,
     responses=_RESPONSES,

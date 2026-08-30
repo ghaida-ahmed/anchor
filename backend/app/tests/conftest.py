@@ -108,6 +108,27 @@ def storage(tmp_path: Path) -> LocalStorageService:
 
 
 @pytest.fixture(autouse=True)
+def rate_limits_off(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Disable rate limiting for the suite, and reset the counters between tests.
+
+    The limiter keys anonymous callers by IP, and every test shares TestClient's
+    single address — so hundreds of requests in a few seconds would trip limits
+    that a real student never would, and tests would fail by execution ORDER
+    rather than by behaviour.
+
+    `test_rate_limiting.py` re-enables it deliberately for the tests that are
+    about the limiter itself. The reset still runs here so those tests cannot leak
+    counters into whatever runs next.
+    """
+    from app.core.rate_limit import limiter
+
+    limiter.reset()
+    monkeypatch.setattr(settings, "RATE_LIMIT_ENABLED", False)
+    yield
+    limiter.reset()
+
+
+@pytest.fixture(autouse=True)
 def fake_relevance_threshold(monkeypatch: pytest.MonkeyPatch) -> None:
     """Pin the relevance floor to the fake provider's scale.
 

@@ -100,5 +100,25 @@ class LocalStorageService(StorageService):
 
 
 def get_storage_service() -> StorageService:
-    """Factory. The place to branch on a STORAGE_BACKEND setting in a later phase."""
-    return LocalStorageService()
+    """Build the configured backend.
+
+    Only `local` exists today, and the branch is written out rather than implied
+    so the extension point is visible: adding S3, R2 or Supabase Storage is a new
+    class above and one more arm here. No route, service or test changes, because
+    nothing above this module knows what a storage key resolves to.
+
+    WHY THIS MATTERS IN PRODUCTION. `local` writes to UPLOAD_DIR on the container
+    filesystem. On a platform with an attached persistent volume that is correct
+    and sufficient. On a platform with an ephemeral filesystem — the default on
+    most free tiers — uploaded documents disappear on every deploy and restart,
+    while their database rows survive, leaving a course whose materials 404. That
+    is a DEPLOYMENT decision, not a code one, which is exactly why it is a setting;
+    the trade-off is documented in the README and in docs/deployment.md.
+    """
+    if settings.STORAGE_BACKEND == "local":
+        return LocalStorageService()
+
+    # Unreachable while STORAGE_BACKEND is a one-value Literal, but a wrong value
+    # should fail loudly at startup rather than silently fall back to a backend
+    # that loses data.
+    raise ValueError(f"Unknown STORAGE_BACKEND: {settings.STORAGE_BACKEND!r}")

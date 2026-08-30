@@ -120,7 +120,17 @@ def register_exception_handlers(app: FastAPI) -> None:
 
     @app.exception_handler(AnchorError)
     async def _domain_error(_request: Request, exc: AnchorError) -> JSONResponse:
-        return JSONResponse(status_code=exc.status_code, content={"detail": str(exc)})
+        headers: dict[str, str] = {}
+        # RFC 9110: a 429 should tell the client how long to wait, so a well-behaved
+        # client backs off instead of retrying straight into the same wall.
+        retry_after = getattr(exc, "retry_after", None)
+        if retry_after is not None:
+            headers["Retry-After"] = str(retry_after)
+        return JSONResponse(
+            status_code=exc.status_code,
+            content={"detail": str(exc)},
+            headers=headers or None,
+        )
 
     @app.exception_handler(SQLAlchemyError)
     async def _database_error(_request: Request, _exc: SQLAlchemyError) -> JSONResponse:

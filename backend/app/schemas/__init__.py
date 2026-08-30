@@ -6,7 +6,7 @@ from app.schemas.course import (
     CourseWithCounts,
 )
 from app.schemas.document import DocumentRead
-from app.schemas.health import HealthResponse
+from app.schemas.health import HealthResponse, ReadinessResponse
 from app.schemas.knowledge import (
     KnowledgeEdgeRead,
     KnowledgeGapRead,
@@ -68,6 +68,7 @@ from app.schemas.study_guide import (
 from app.schemas.user import TimezoneUpdate, UserRead
 
 __all__ = [
+    "ReadinessResponse",
     "ConceptResultRead",
     "ShortAnswerSubmit",
     "KnowledgeEdgeRead",

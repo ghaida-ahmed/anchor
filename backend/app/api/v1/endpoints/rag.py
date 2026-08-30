@@ -7,9 +7,10 @@ another account reads as 404 and can never contribute chunks.
 
 import uuid
 
-from fastapi import APIRouter, status
+from fastapi import APIRouter, Depends, status
 
 from app.api.deps import CurrentUser, RagServiceDep
+from app.core.rate_limit import rate_limit_ai
 from app.schemas import (
     AskRequest,
     AskResponse,
@@ -32,6 +33,7 @@ _RESPONSES = {
 
 @router.post(
     "/search",
+    dependencies=[Depends(rate_limit_ai)],
     response_model=SearchResponse,
     responses=_RESPONSES,
     summary="Semantic search over this course's processed documents",
@@ -69,6 +71,7 @@ def search_course(
 
 @router.post(
     "/ask",
+    dependencies=[Depends(rate_limit_ai)],
     response_model=AskResponse,
     responses=_RESPONSES,
     summary="Ask a question answered from this course's materials",
