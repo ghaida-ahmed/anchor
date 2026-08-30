@@ -14,7 +14,7 @@ export function EmptyState({ icon: Icon, title, description, action }: EmptyStat
       <div className="flex size-11 items-center justify-center rounded-full bg-paper-200">
         <Icon className="size-5 text-ink-400" strokeWidth={1.75} aria-hidden />
       </div>
-      <h3 className="mt-4 font-serif text-lg text-ink-900">{title}</h3>
+      <h2 className="mt-4 font-serif text-lg text-ink-900">{title}</h2>
       <p className="mt-1 max-w-sm text-sm text-ink-500">{description}</p>
       {action ? <div className="mt-5">{action}</div> : null}
     </div>

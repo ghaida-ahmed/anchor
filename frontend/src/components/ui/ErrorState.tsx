@@ -19,7 +19,7 @@ export function ErrorState({
       <div className="flex size-11 items-center justify-center rounded-full bg-red-50">
         <AlertTriangle className="size-5 text-signal-danger" strokeWidth={1.75} aria-hidden />
       </div>
-      <h3 className="mt-4 font-serif text-lg text-ink-900">{title}</h3>
+      <h2 className="mt-4 font-serif text-lg text-ink-900">{title}</h2>
       <p className="mt-1 max-w-sm text-sm text-ink-500">{message}</p>
       {onRetry ? (
         <Button variant="secondary" size="sm" className="mt-5" onClick={onRetry}>

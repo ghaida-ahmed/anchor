@@ -1,5 +1,5 @@
 import { X } from 'lucide-react';
-import { useEffect, useRef, type ReactNode } from 'react';
+import { useEffect, useId, useRef, type ReactNode } from 'react';
 
 interface DialogProps {
   open: boolean;
@@ -15,6 +15,10 @@ interface DialogProps {
  */
 export function Dialog({ open, title, description, onClose, children }: DialogProps) {
   const ref = useRef<HTMLDialogElement>(null);
+  // Generated, not hardcoded: two dialogs mounted at once would otherwise share
+  // an id and the label association would point at whichever rendered first.
+  const titleId = useId();
+  const descriptionId = useId();
 
   useEffect(() => {
     const element = ref.current;
@@ -27,7 +31,8 @@ export function Dialog({ open, title, description, onClose, children }: DialogPr
   return (
     <dialog
       ref={ref}
-      aria-labelledby="dialog-title"
+      aria-labelledby={titleId}
+      {...(description ? { "aria-describedby": descriptionId } : {})}
       onClose={onClose}
       // Escape fires `cancel` then `close`; both funnel into onClose above.
       onClick={(event) => {
@@ -38,11 +43,13 @@ export function Dialog({ open, title, description, onClose, children }: DialogPr
     >
       <div className="flex items-start justify-between gap-4 border-b border-paper-200 px-6 py-4">
         <div>
-          <h2 id="dialog-title" className="font-serif text-lg text-ink-900">
+          <h2 id={titleId} className="font-serif text-lg text-ink-900">
             {title}
           </h2>
           {description ? (
-            <p className="mt-0.5 text-sm text-ink-500">{description}</p>
+            <p id={descriptionId} className="mt-0.5 text-sm text-ink-500">
+              {description}
+            </p>
           ) : null}
         </div>
         <button

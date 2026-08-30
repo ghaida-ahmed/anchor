@@ -39,13 +39,23 @@ PATTERNS: dict[str, re.Pattern[str]] = {
     ),
 }
 
-# Credentials that are deliberately public: the local development defaults, which
-# are documented in the README and identical for every clone. Ignoring them keeps
-# the signal high; anything else with an embedded password is a real finding.
+# Lines that look like credentials but cannot be: the local development defaults
+# (documented in the README and identical for every clone) and the placeholders in
+# .env.example and the config tests.
+#
+# This list is the scanner's weak point — every entry is a hole — so each is
+# anchored tightly. A placeholder is recognised by its HOST being an obvious
+# non-address (`HOST`, `localhost`, an RFC 2606 example domain), not merely by its
+# password looking fake: `hunter2@db.production.internal` must still be a finding.
 ALLOWED = (
+    # Documented local development credentials.
     re.compile(r"://anchor:anchor@"),
     re.compile(r"://postgres:postgres@"),
-    re.compile(r"://user:password@"),
+    # All-caps placeholders, e.g. USER:PASSWORD@HOST.
+    re.compile(r"://[A-Z_]+:[A-Z_]+@"),
+    # Any credentials pointing at a host that cannot exist.
+    re.compile(r"://[^\s:@/]+:[^\s:@/]+@(?:localhost|HOST)\b"),
+    re.compile(r"://[^\s:@/]+:[^\s:@/]+@[^\s/]*\.(?:example\.(?:com|org|net)|invalid|test)\b"),
 )
 
 # Binary and vendored paths that would produce noise without adding coverage.

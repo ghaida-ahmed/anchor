@@ -187,9 +187,13 @@ export function TutorTab({
 
       {error ? <FormError message={error} /> : null}
 
+      {/* The input suppresses its own outline so the ring sits on the whole
+          composer rather than around the bare text field. That only works if the
+          wrapper actually shows focus — without focus-within, a keyboard user
+          gets no indication at all. */}
       <form
         onSubmit={handleSubmit}
-        className="flex items-center gap-3 rounded-card border border-paper-300 bg-white p-3"
+        className="flex items-center gap-3 rounded-card border border-paper-300 bg-white p-3 focus-within:border-ink-500 focus-within:ring-2 focus-within:ring-ink-900/10"
       >
         <input
           type="text"

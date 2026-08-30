@@ -36,6 +36,50 @@ class TestSecretsAreNotCommittable:
         )
         assert result.returncode == 0, result.stdout + result.stderr
 
+    def test_the_scanner_still_catches_a_real_credential(self) -> None:
+        """The allowlist is the scanner's weak point — every entry is a hole.
+
+        A scanner that only ever passes is indistinguishable from no scanner, so
+        this pins both directions: obvious placeholders are ignored, and anything
+        pointing at a host that could exist is still a finding.
+        """
+        import importlib.util
+
+        script = REPO_ROOT / "scripts" / "scan_secrets.py"
+        spec = importlib.util.spec_from_file_location("scan_secrets", script)
+        scanner = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(scanner)
+
+        def flagged(line: str) -> bool:
+            if any(allowed.search(line) for allowed in scanner.ALLOWED):
+                return False
+            return any(p.search(line) for p in scanner.PATTERNS.values())
+
+        # Assembled at runtime rather than written as literals. These are fake,
+        # but a scanner that skipped the file containing them would be a real
+        # hole — somewhere a genuine key could be hidden. Splitting each string
+        # means the pattern never appears in the source, so the scanner keeps
+        # covering this file like any other.
+        must_flag = [
+            "postgresql://" + "admin:hunter2@db.production.internal:5432/anchor",
+            "postgres://" + "root:S3cret@10.0.0.5/main",
+            "AIza" + "SyD1234567890abcdefghijklmnopqrstuvw",
+            "sk-" + "proj-abcdefghijklmnopqrstuvwxyz0123456789",
+            "ghp" + "_abcdefghijklmnopqrstuvwxyz0123456789AB",
+            "-----BEGIN " + "RSA PRIVATE KEY-----",
+        ]
+        must_pass = [
+            "postgresql+psycopg://anchor:anchor@localhost:5432/anchor",
+            "DATABASE_URL=postgresql+psycopg://USER:PASSWORD@HOST:5432/DBNAME",
+            "postgresql+psycopg://user:pw@db.example.com:5432/anchor",
+            "ordinary prose about document processing",
+        ]
+
+        for line in must_flag:
+            assert flagged(line), f"scanner missed: {line[:40]}"
+        for line in must_pass:
+            assert not flagged(line), f"false positive: {line[:40]}"
+
     def test_backend_env_is_ignored_by_git(self) -> None:
         """The one file holding real keys must never become trackable."""
         result = subprocess.run(

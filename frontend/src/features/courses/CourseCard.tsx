@@ -28,7 +28,9 @@ export function CourseCard({ course }: { course: Course }) {
         />
       </div>
 
-      <h3 className="mt-3 font-serif text-lg text-ink-900">{course.title}</h3>
+      {/* h2: a course card is a top-level item under the page's h1, on both the
+          Courses list and the Dashboard. */}
+      <h2 className="mt-3 font-serif text-lg text-ink-900">{course.title}</h2>
       {course.description ? (
         <p className="mt-1.5 line-clamp-2 text-sm leading-relaxed text-ink-500">
           {course.description}

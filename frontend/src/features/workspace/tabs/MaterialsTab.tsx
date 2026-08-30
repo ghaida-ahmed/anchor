@@ -221,6 +221,9 @@ export function MaterialsTab({ courseId }: { courseId: string }) {
           type="file"
           accept={ACCEPT}
           multiple
+          // Visually hidden and driven by the button below, but still in the tab
+          // order — without a name a keyboard user focuses an unlabelled control.
+          aria-label={`Upload course materials (${EXTENSIONS_LABEL})`}
           className="sr-only"
           onChange={(event) => void handleFiles(event.target.files)}
         />

@@ -2,62 +2,177 @@
 
 **AI-Powered Adaptive Learning**
 
-ANCHOR turns a student's own course materials into a personalized study workspace.
-Upload the lectures, slides and notes for a course, and ANCHOR builds summaries,
+ANCHOR turns a student's own course materials into a personalised study workspace.
+Upload the lectures, slides and notes for a course, and ANCHOR builds a study guide,
 quizzes and flashcards from *that* material — answering questions with citations back
 to the source document and page, and adapting what it asks next based on which topics
 the student has actually mastered.
 
 ---
 
-## Project status
+## The problem
 
-> **Phase 6 — Knowledge intelligence and assessment. Complete.**
-> A knowledge map derived from the material itself, deterministic knowledge-gap
-> detection over it, short-answer questions marked against a rubric with an honest
-> "could not mark" verdict, a persisted study guide, and per-student timezones so a
-> day starts where the student is.
+Generic AI study tools have two failure modes that matter to a student being
+examined on a specific syllabus.
 
-| Area | Status |
+**They answer from the internet, not from your course.** Ask a chatbot about
+congestion control and it explains congestion control — not the version your
+lecturer taught, with their emphases and their notation, which is what the exam
+asks about. When it is confidently wrong you have no way to tell, because there is
+nothing to check the answer against.
+
+**They do not know what you know.** A tool that generates ten questions generates
+the same ten for a student who has mastered the topic and one who has never seen
+it. Nothing tracks whether an answer six weeks ago still means anything today, and
+"what should I study next?" gets answered by a model guessing rather than by
+evidence.
+
+## The approach
+
+ANCHOR splits the problem in two, and gives each half to the thing that is
+actually good at it.
+
+**Retrieval grounds every generated word in the student's own upload.** Material is
+chunked, embedded and stored in PostgreSQL with pgvector. Answering a question
+retrieves the passages that address it, and the model is shown numbered excerpts
+and told to cite an excerpt *number*. The application maps that number back to the
+`DocumentChunk` row it supplied. The model never writes a filename or a page
+number, so it cannot invent one — a citation is a database lookup, not parsed text.
+
+**Everything about the student is deterministic.** Mastery, retention decay,
+spaced-repetition intervals, topic selection, difficulty, and knowledge-gap
+detection are pure functions over stored evidence, unit-tested with exact expected
+values. No model decides what a student knows or what they should do next. That is
+not a limitation — it is what makes the adaptation explainable, reproducible, and
+free to compute.
+
+The dividing line, stated once:
+
+| Deterministic backend | Language model |
 |---|---|
-| PostgreSQL + Alembic migrations | **Live** — verified against PostgreSQL 17 |
-| pgvector `vector(1536)` chunk storage | **Live** |
-| Registration, login, session identity | **Live** — JWT, bcrypt |
-| Course CRUD, document upload/delete | **Live** |
-| Text extraction (PDF, TXT, MD) | **Live** — page numbers preserved, no OCR |
-| Background processing with status transitions | **Live** |
-| Semantic search (`/search`) | **Live** — cosine, ownership-scoped |
-| AI Tutor (`/ask`) with citations | **Live** |
-| AI provider | **Gemini** by default; OpenAI optional |
-| Topic extraction from material | **Live** |
-| Grounded quiz generation (MCQ) | **Live** — standard and adaptive |
-| Mastery tracking and weak-topic detection | **Live** — deterministic |
-| Adaptive topic and difficulty selection | **Live** — deterministic |
-| Grounded flashcards | **Live** |
-| Study recommendations | **Live** — template-built, no model call |
-| Effective mastery (calendar decay) | **Live** — derived on read, never stored |
-| Mastery history and trends | **Live** — event-sourced |
-| Spaced-repetition flashcard review | **Live** — ANCHOR heuristic |
-| Exam Readiness and Exam Prep mode | **Live** — optional per course |
-| Knowledge map (prerequisite / related) | **Live** — chunk-evidenced, cycle-free |
-| Knowledge-gap detection | **Live** — deterministic, no model call |
-| Short-answer questions and grading | **Live** — rubric-based, `uncertain` supported |
-| Prompt-injection containment on student answers | **Live** — fenced input + output validation |
-| Grounded study guide | **Live** — persisted, staleness-tracked |
-| Per-student IANA timezone | **Live** — local-day queue, charts and countdown |
-| Sample data anywhere in the UI | **None** — every value is real or an empty state |
+| which topics to practise, and at what difficulty | writing the questions and explanations |
+| how mastery changes, and how it decays with time | naming the topics found in the material |
+| when a flashcard is due | judging how two topics relate |
+| which topics are knowledge gaps | marking a written answer against a rubric |
+| how a verdict changes mastery | writing the study guide's prose |
+| where the student's day begins and ends | |
 
-Two rules this repo follows, and will keep following:
+---
 
-1. **No fake APIs.** An endpoint either works or returns `501` naming the phase that
-   will deliver it. Nothing returns invented data dressed up as a real response.
-2. **Sample UI is labelled as sample.** Every screen driven by placeholder data
-   carries a visible *Interface preview* notice. Sample content carries **no course
-   id**, so it can never appear to belong to one of your real courses.
+## Key features
+
+- **AI Tutor** — ask a question, get an answer grounded in your material with
+  document-and-page citations, or an honest "your material does not cover this".
+- **Adaptive quizzes** — multiple-choice and written answers, with topics and
+  difficulty chosen by the mastery engine rather than at random.
+- **Grounded short-answer marking** — answers are marked against key concepts
+  extracted from the source, with a first-class `uncertain` verdict when the
+  grader cannot be confident.
+- **Mastery and retention** — a stored score, plus an effective score that softens
+  with inactivity without ever destroying the evidence behind it.
+- **Spaced repetition** — flashcards scheduled by interval and ease, with a
+  due-review queue on the student's local day.
+- **Knowledge map** — prerequisite and related links between topics, derived from
+  passages that discuss both, with the supporting excerpts attached.
+- **Knowledge gaps** — the weak topics that are *blocking* other topics, ranked by
+  a documented formula.
+- **Study guide** — one section per topic, written from the material, persisted,
+  and marked stale when the material changes.
+- **Exam Prep** — an optional exam date shifts selection towards coverage and
+  hardens difficulty as the date approaches.
 
 ---
 
 ## Architecture
+
+```mermaid
+flowchart TD
+    UI["React + TypeScript SPA<br/>Vite build, static hosting"]
+    API["FastAPI<br/>REST, OpenAPI"]
+    AUTH["Authentication and ownership<br/>JWT · ownership as a SQL predicate"]
+
+    UI -->|HTTPS| API
+    API --> AUTH
+
+    AUTH --> SVC
+
+    subgraph SVC["Learning services"]
+        direction LR
+        RAG["RAG<br/>retrieval + grounding"]
+        MAST["Mastery"]
+        RET["Retention<br/>decay + scheduling"]
+        ADAPT["Adaptive engine"]
+        MAP["Knowledge map<br/>+ gap detection"]
+        ASSESS["Assessment<br/>MCQ + short answer"]
+    end
+
+    SVC --> DB[("PostgreSQL 17<br/>pgvector · vector 1536")]
+
+    RAG -.->|generation + embeddings| PROV
+    MAP -.-> PROV
+    ASSESS -.-> PROV
+
+    subgraph PROV["Provider abstraction"]
+        GEM["Gemini (default)"]
+        OAI["OpenAI (optional)"]
+    end
+
+    API --> STORE
+    subgraph STORE["Storage abstraction"]
+        LOCAL["Local filesystem"]
+        OBJ["Object storage<br/>(interface ready)"]
+    end
+
+    classDef det fill:#eef6ee,stroke:#5a8a5a,color:#1d3b1d
+    classDef gen fill:#fff4e6,stroke:#c08a3e,color:#4a3210
+    class MAST,RET,ADAPT det
+    class PROV,GEM,OAI gen
+```
+
+Solid arrows are always taken; dotted arrows reach a language model. **Mastery,
+retention and the adaptive engine have no path to a provider at all** — that is
+enforced by their having no provider dependency to inject, not by convention.
+
+The evidence pipeline, which is the part that makes it adaptive:
+
+```mermaid
+flowchart LR
+    A["Student answers<br/>a question"] --> B["Quiz answer<br/>+ verdict"]
+    B --> C["Mastery update<br/>exponentially weighted"]
+    C --> D["Mastery event<br/>immutable history"]
+    C --> E["Effective mastery<br/>decays with elapsed days"]
+    E --> F["Adaptive selection<br/>topics + difficulty"]
+    E --> G["Knowledge gaps<br/>weak AND blocking"]
+    F --> H["Next quiz"]
+    G --> H
+```
+
+---
+
+## Security and privacy
+
+A student's uploaded material is private, and the design treats it that way.
+
+| Concern | How it is handled |
+|---|---|
+| **Cross-user access** | Ownership is a predicate *inside* the same SQL statement as the query, never a check after fetching. Retrieval joins `chunks → documents → courses → courses.user_id`, so another student's material cannot enter a result set at all. |
+| **Resource enumeration** | Another user's resource returns `404`, not `403` — a 403 confirms the resource exists. |
+| **Passwords** | bcrypt, used directly. Over 72 bytes is rejected rather than silently truncated, which would make two long passwords interchangeable. |
+| **Tokens** | HS256 with the algorithm list pinned at decode, so an `alg: none` token cannot pass. Short-lived, subject-only payload. |
+| **Provider credentials** | Server-side only. The frontend has no reference to any provider key; anything `VITE_*` is compiled into a public bundle and only ever holds the API's own URL. |
+| **Prompt injection** | A student's written answer is untrusted input: fenced, NFKC-normalised against lookalike fence forgery, and the model's verdict validated against *our* stored rubric. A self-contradicting verdict becomes `uncertain` rather than being trusted. |
+| **Uploads** | Extension allow-list, magic-byte check (the browser's MIME type is not trusted), size limit, and a generated storage key — the user's filename never touches the filesystem. |
+| **Errors** | Database driver text and provider exceptions are replaced with safe messages; a traceback would carry local variables, which here means document text. |
+| **Logs** | Connection strings, API keys and bearer tokens are redacted before anything is written, and noisy dependency loggers are pinned to `WARNING` so enabling debug output cannot enable data output. |
+| **Production config** | The app refuses to start outside development on a debug build, the published dev credentials, a weak or shared secret, or a wildcard/plaintext CORS origin. |
+
+Secrets never enter the repository: `backend/.env` is gitignored, and
+`scripts/scan_secrets.py` runs in CI and in the test suite against every tracked
+file, with a self-test proving it still catches a real credential.
+
+---
+
+## How a request flows
 
 ```
 ┌─────────────────────┐
@@ -1651,7 +1766,7 @@ failure, forged and garbage tokens, course CRUD, document upload and validation
 (type, magic bytes, empty, oversized), path-traversal filenames, cascade deletion, and
 user isolation on every course and document route.
 
-**448 tests pass.** The Phase 6 suites are worth naming, because most of what they
+**500 tests pass.** The Phase 6 suites are worth naming, because most of what they
 assert is what must *not* happen:
 
 | Suite | What it pins down |
@@ -1661,6 +1776,103 @@ assert is what must *not* happen:
 | `test_study_guide.py` | One section per topic with resolvable citations; a section citing nothing real is dropped; new material marks the guide stale while answering a question does not; a deactivated topic's section disappears; reading never generates |
 | `test_timezones.py` | Fixed offsets and unknown zones are rejected; an unknown stored zone falls back to UTC rather than raising; London 2026 gives a 23-hour day on 29 March and a 25-hour day on 25 October |
 | `test_local_day_semantics.py` | A card due tonight is in this morning's queue; the same instant is "today" in Los Angeles and "tomorrow" in UTC; overdue means before the local day began; two evening answers are one local day, not two; the exam countdown uses the student's own today |
+
+---
+
+## Running in production
+
+### Configuration refuses to start when it is unsafe
+
+Setting `ENVIRONMENT` to anything other than `development` turns on a startup
+validator. The process **will not boot** with `DEBUG` left true, the
+docker-compose database credentials (they are published in this README), the
+shared development signing key, a `SECRET_KEY` under 32 characters, an empty or
+wildcard `CORS_ORIGINS`, or a plaintext `http://` origin that is not localhost.
+
+The error names the variable and the problem, and never prints the value —
+configuration errors reach logs, and a log is a place secrets escape from.
+
+A boot failure you can read is better than a running service with forgeable
+tokens, which is the failure this replaces.
+
+### Rate limiting
+
+Four buckets, because one global limit would have to be set for the most
+expensive route and would then cripple ordinary navigation:
+
+| Bucket | Limit | Covers |
+|---|---|---|
+| `read` | 240/min | listing courses, opening a tab, polling a document's status |
+| `write` | 60/min | creating a course, submitting an answer — a row, not a call |
+| `ai` | 10/min **and** 60/hour | anything that reaches a model |
+| `auth` | 10/min and 60/hour | login and registration, keyed by IP |
+
+The `ai` bucket is the one that protects the bill, and the reason the split exists.
+Both of its windows apply: the per-minute limit stops a burst, the hourly one stops
+a slow drip that would still empty a daily quota. Requests are keyed by user when a
+token is present and by IP otherwise, so several students behind one university NAT
+do not share an AI quota while one student cannot escape theirs by changing network.
+
+A rejected request is **not** recorded, so a client hammering a closed window does
+not push its own reset further away. Responses carry `Retry-After`.
+
+**The honest limitation:** counters live in the application's memory. There is no
+Redis, because ANCHOR deploys as a single instance and a second service to hold six
+integers would be infrastructure for its own sake. So limits are **per process**
+(two replicas allow twice the traffic) and **reset on restart** (a deploy clears
+them). That is adequate against a runaway client loop or a stuck retry burning a
+Gemini quota, which is what this defends against. It is **not** a defence against a
+distributed attacker, and is not presented as one. Scaling past one instance is the
+point to revisit it — and the reason the production image runs a single worker.
+
+### Logging
+
+Structured JSON in production, plain text in development, no logging dependency —
+the standard library does both.
+
+Identifiers, counts, durations, outcomes and error *classes* are logged. Passwords,
+tokens, API keys, connection strings, document text, question text and student
+answers are not. Every record passes a redaction filter that strips
+credential-shaped substrings and truncates at 500 characters, because a provider
+error can carry an entire prompt back — and the prompt carries the student's
+material. Exception *types* are recorded rather than tracebacks, since a traceback
+carries local variables.
+
+`sqlalchemy.engine`, `httpx`, `google_genai` and `openai` are pinned to `WARNING`
+regardless of the root level, so turning on debug logging for ANCHOR can never turn
+on data logging for its dependencies.
+
+### Health and readiness
+
+`GET /api/health` is liveness: cheap, dependency-free, safe to poll every few
+seconds. It must not fail because a *downstream* service is briefly unavailable, or
+a platform would restart a healthy container for someone else's outage.
+
+`GET /api/ready` is readiness: it checks the database and returns `503` when it is
+unreachable, so a load balancer stops routing instead of serving 500s. It reports
+whether an AI key is configured but never gates on it — without one the app still
+serves courses, uploads and every deterministic feature.
+
+Neither calls a language model. A health check that costs an API call is one that
+bills you for being monitored.
+
+### Deployment
+
+Full procedure, provider comparison and the storage trade-off:
+**[`docs/deployment.md`](docs/deployment.md)**.
+
+The short version: ANCHOR needs PostgreSQL with pgvector, a long-lived Python
+process (document processing runs as a background task *after* the response is
+sent, so a serverless function that freezes on return would kill ingestion
+mid-document), and persistent storage for uploads.
+
+Migrations are **never** run on startup. On boot they would mean a rollback
+silently mutates the schema, two containers starting together race each other, and
+a failed migration takes down a previously healthy deployment. Run them explicitly:
+
+```bash
+DATABASE_URL='postgresql+psycopg://...' python -m alembic upgrade head
+```
 
 ---
 
@@ -1751,6 +1963,25 @@ assert is what must *not* happen:
   23:00 — it simply now appears in the queue from the start of that local day.
 - **One timezone per account, not per course.** A student studying across a move or a
   term abroad has to change it themselves; nothing is inferred.
+- **Rate limits are per process and reset on restart.** In-memory counters, no
+  Redis. Adequate against a runaway client; not a defence against a distributed
+  attacker. Running more than one worker multiplies the effective limits, which is
+  why the production image runs one.
+- **Local file storage is only correct with a persistent volume.** On an ephemeral
+  filesystem — the default on most free tiers — uploaded documents vanish on every
+  deploy while their database rows survive, leaving courses whose materials 404.
+  The storage interface is ready for object storage; no object-store backend is
+  written, because choosing one is a deployment decision with a bill attached.
+- **No background job runner.** Document processing, study-guide generation and
+  short-answer grading all happen in the request path. A large course makes a slow
+  request, and a restart mid-processing leaves a document stuck in `processing`
+  until it is reprocessed.
+- **The secret scanner is pattern-based.** It catches the credential shapes that
+  actually leak (provider keys, tokens, private keys, URLs with embedded
+  passwords). It is not entropy analysis and will not catch an arbitrary secret
+  that looks like ordinary text.
+- **No token revocation, rate-limit persistence, or audit log.** Signing out
+  discards the client's token; that token stays valid until it expires.
 
 ---
 
@@ -1787,7 +2018,17 @@ layered grading pipeline, an honest `uncertain` verdict and prompt-injection
 containment · persisted, staleness-tracked study guide · per-student IANA timezone
 with local-day queue, charts and exam countdown.
 
-**Phase 7 — Ideas**
+**Production readiness** ✅
+Git history with no secret ever committed · hardened `.gitignore` and a
+self-testing secret scanner in CI · GitHub Actions running ruff, format, pytest
+against a real pgvector service, plus frontend typecheck, lint and build ·
+production configuration that refuses to start when unsafe · rate limiting with a
+dedicated AI bucket · redacting structured logs · readiness probe · multi-stage
+non-root Dockerfile · deployment guide.
+
+**Future work**
 Calibrating the decay, scheduling and gap constants against real outcomes ·
-background generation for long study guides · a regrade path for failed markings ·
-cross-course knowledge maps · sentence-level citations.
+an object-storage backend behind the existing interface · a background job runner
+so ingestion and generation leave the request path · a regrade path for failed
+markings · shared rate-limit state if it ever runs on more than one instance ·
+sentence-level citations.
