@@ -2,6 +2,8 @@
 
 **AI-Powered Adaptive Learning**
 
+[![CI](https://github.com/ghaida-ahmed/anchor/actions/workflows/ci.yml/badge.svg)](https://github.com/ghaida-ahmed/anchor/actions/workflows/ci.yml)
+
 ANCHOR turns a student's own course materials into a personalised study workspace.
 Upload the lectures, slides and notes for a course, and ANCHOR builds a study guide,
 quizzes and flashcards from *that* material — answering questions with citations back
@@ -370,6 +372,12 @@ keep it plain.
 ---
 
 ## Local setup
+
+```bash
+git clone https://github.com/ghaida-ahmed/anchor.git
+cd anchor
+```
+
 
 Requires Node 20+, Python 3.11+, and Docker (or a PostgreSQL 15+ instance with
 pgvector available).
