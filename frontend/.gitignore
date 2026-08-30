@@ -22,3 +22,9 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+.vercel
+
+# Vercel writes .env.local here. Keep the example tracked — it documents
+# the contract, and holds placeholders only.
+.env*
+!.env.example
