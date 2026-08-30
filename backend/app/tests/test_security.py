@@ -67,12 +67,26 @@ class TestSecretsAreNotCommittable:
             "sk-" + "proj-abcdefghijklmnopqrstuvwxyz0123456789",
             "ghp" + "_abcdefghijklmnopqrstuvwxyz0123456789AB",
             "-----BEGIN " + "RSA PRIVATE KEY-----",
+            # A real pooler credential must still be caught, even though the
+            # placeholder form of the same URL is allowed above.
+            "postgresql+psycopg://"
+            + "postgres.abcdef:Xy9RealPass@aws-0-eu-west-1.pooler.supabase.com"
+            ":6543/postgres",
+            # A password merely *starting* with a placeholder word is not one.
+            # The host must also be non-placeholder, or the example-domain rule
+            # would excuse this line for a different reason than the one tested.
+            "postgresql://" + "postgres:PASSWORDISH123abc@db.acme-corp.io/db",
         ]
         must_pass = [
             "postgresql+psycopg://anchor:anchor@localhost:5432/anchor",
             "DATABASE_URL=postgresql+psycopg://USER:PASSWORD@HOST:5432/DBNAME",
             "postgresql+psycopg://user:pw@db.example.com:5432/anchor",
             "ordinary prose about document processing",
+            # Documentation templates from docs/deployment.md.
+            "postgresql://postgres.<project-ref>:[YOUR-PASSWORD]@aws-0-<region>"
+            ".pooler.supabase.com:6543/postgres",
+            "postgresql+psycopg://postgres:YOUR-PASSWORD@db.<project-ref>"
+            ".supabase.co:5432/postgres",
         ]
 
         for line in must_flag:

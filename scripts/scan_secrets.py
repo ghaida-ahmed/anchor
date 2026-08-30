@@ -53,6 +53,20 @@ ALLOWED = (
     re.compile(r"://postgres:postgres@"),
     # All-caps placeholders, e.g. USER:PASSWORD@HOST.
     re.compile(r"://[A-Z_]+:[A-Z_]+@"),
+    # Documentation templates: the credentials region carries a `<...>` or
+    # `[...]` placeholder, as in
+    # postgresql://postgres.<project-ref>:[YOUR-PASSWORD]@<region>.example/db
+    # A real connection string cannot contain those characters unescaped, so this
+    # recognises a template rather than excusing a secret.
+    re.compile(r"://[^\s@]*[<\[][^\s@]*@"),
+    # An explicit placeholder vocabulary in the password position. Listing the
+    # words rather than matching "looks fake" keeps this from excusing a real
+    # credential: a generated password is never one of these.
+    re.compile(
+        r"://[^\s:@/]+:\[?(?:YOUR[-_]PASSWORD|PASSWORD|DB[-_]PASSWORD|"
+        r"CHANGEME|CHANGE[-_]ME|REPLACE[-_]ME|xxx+|\*{3,})\]?@",
+        re.IGNORECASE,
+    ),
     # Any credentials pointing at a host that cannot exist.
     re.compile(r"://[^\s:@/]+:[^\s:@/]+@(?:localhost|HOST)\b"),
     re.compile(r"://[^\s:@/]+:[^\s:@/]+@[^\s/]*\.(?:example\.(?:com|org|net)|invalid|test)\b"),
