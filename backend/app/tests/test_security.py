@@ -377,3 +377,110 @@ class TestReadiness:
         response = client.get("/api/health")
         assert response.status_code == 200
         assert response.json()["status"] == "ok"
+
+
+class TestAuthenticationStaysAnchorsOwn:
+    """Supabase hosts the database and the file bucket. It does NOT do auth.
+
+    Adding a Supabase dependency is exactly the moment someone might reach for
+    Supabase Auth, so the boundary is pinned here rather than left to reviewer
+    memory. Registration and login stay: React -> FastAPI -> bcrypt/JWT ->
+    `users` table over SQLAlchemy.
+    """
+
+    def test_registration_writes_to_the_users_table(self, client: TestClient, session):
+        from app.models import User
+
+        email = unique_email("ownauth")
+        response = client.post(
+            "/api/v1/auth/register",
+            json={"name": "Own Auth", "email": email, "password": "correct-horse-9"},
+        )
+        assert response.status_code == 201
+
+        row = session.query(User).filter(User.email == email).one()
+        assert row.hashed_password
+        # Never the plaintext, and a bcrypt hash by shape.
+        assert row.hashed_password != "correct-horse-9"
+        assert row.hashed_password.startswith("$2")
+
+    def test_login_verifies_against_that_hash(self, client: TestClient):
+        email = unique_email("ownauth-login")
+        client.post(
+            "/api/v1/auth/register",
+            json={"name": "Own Auth", "email": email, "password": "correct-horse-9"},
+        )
+        good = client.post(
+            "/api/v1/auth/login",
+            json={"email": email, "password": "correct-horse-9"},
+        )
+        bad = client.post(
+            "/api/v1/auth/login", json={"email": email, "password": "wrong-password"}
+        )
+        assert good.status_code == 200 and good.json()["access_token"]
+        assert bad.status_code == 401
+
+    def test_the_token_is_signed_and_verified_by_anchor(self, client: TestClient):
+        """Decoded with ANCHOR's own key, so no external issuer is involved."""
+        import jwt
+
+        email = unique_email("ownauth-jwt")
+        token = client.post(
+            "/api/v1/auth/register",
+            json={"name": "Own Auth", "email": email, "password": "correct-horse-9"},
+        ).json()["access_token"]
+
+        payload = jwt.decode(
+            token, settings.SECRET_KEY, algorithms=[settings.JWT_ALGORITHM]
+        )
+        assert uuid.UUID(payload["sub"])
+        assert "exp" in payload
+
+    def test_no_supabase_auth_anywhere_in_the_backend(self):
+        """Supabase appears only in the storage backend and its configuration."""
+        import pathlib
+
+        # Assembled at runtime: written as literals they would match this very
+        # file, and a check that trips on itself gets deleted rather than fixed.
+        forbidden = ["supabase" + ".auth", "go" + "true", "sign_in_" + "with"]
+
+        offenders = []
+        for path in pathlib.Path("app").rglob("*.py"):
+            # This file necessarily contains the strings it searches for.
+            if path.name == "test_security.py":
+                continue
+            text = path.read_text()
+            lowered = text.lower()
+            if "supabase" in lowered:
+                # storage.py — the backend itself
+                # config.py  — its settings
+                # session.py — names the pooler host for prepared-statement
+                #              compatibility; nothing to do with auth
+                allowed = (
+                    path.name in {"storage.py", "config.py", "session.py"}
+                    or "tests" in path.parts
+                )
+                if not allowed:
+                    offenders.append(str(path))
+            for needle in forbidden:
+                assert needle not in lowered, f"{path}: {needle}"
+
+        assert not offenders, f"Supabase referenced outside storage/config: {offenders}"
+
+    def test_the_supabase_client_library_is_not_a_dependency(self):
+        """Storage talks to a documented REST endpoint with httpx. Pulling in the
+        SDK would add the Postgres and Auth surface ANCHOR deliberately avoids."""
+        import pathlib
+
+        requirements = pathlib.Path("requirements.txt").read_text()
+        # Package names only — comments legitimately mention Supabase.
+        packages = [
+            line.split("==")[0].split("[")[0].strip().lower()
+            for line in requirements.splitlines()
+            if line.strip() and not line.strip().startswith("#")
+        ]
+        assert "supabase" not in packages
+        assert "gotrue" not in packages
+        assert "storage3" not in packages
+        # And the client we DO use is declared rather than relied on transitively.
+        assert "httpx" in packages

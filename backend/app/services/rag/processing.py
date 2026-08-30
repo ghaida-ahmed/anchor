@@ -90,11 +90,16 @@ class DocumentProcessor:
             session.commit()
 
         try:
-            path = self.storage.get_path(storage_key)
             if not self.storage.exists(storage_key):
                 raise ExtractionError("The stored file is missing.")
 
-            pages = get_extractor(file_type).extract(path)
+            # `local_path` is a context manager because an object-store backend
+            # downloads to a temp file here. Exiting the block removes it, so a
+            # failed extraction cannot leave a copy of the student's document
+            # behind in the container's temp directory.
+            with self.storage.local_path(storage_key) as path:
+                pages = get_extractor(file_type).extract(path)
+
             chunks = chunk_pages(pages)
             if not chunks:
                 raise ExtractionError("No readable text was found in this document.")

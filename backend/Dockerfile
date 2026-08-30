@@ -49,12 +49,15 @@ RUN mkdir -p /app/storage/documents && chown -R anchor:anchor /app/storage
 
 USER anchor
 
+# The host decides the port. Render, Fly and Cloud Run all inject $PORT and route
+# to it; a hard-coded 8000 would work locally and then serve nothing in production.
+ENV PORT=8000
 EXPOSE 8000
 
 # Uses the readiness route, not liveness: an orchestrator restarting a container
 # whose database is briefly unreachable is the failure mode worth catching.
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
-    CMD curl -fsS http://localhost:8000/api/ready || exit 1
+    CMD curl -fsS "http://localhost:${PORT}/api/ready" || exit 1
 
 # Migrations are NOT run here. They are a separate, explicit step — see
 # `docs/deployment.md`. Running them on every container start means a rollback or
@@ -63,4 +66,6 @@ HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
 #
 # One worker by default: the rate limiter keeps its counters in process memory, so
 # additional workers would multiply the effective limits. Documented in the README.
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "1"]
+# Shell form so ${PORT} is expanded at runtime. Exec form would pass the literal
+# string "${PORT}" to uvicorn.
+CMD exec uvicorn app.main:app --host 0.0.0.0 --port "${PORT}" --workers 1

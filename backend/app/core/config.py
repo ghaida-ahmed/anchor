@@ -65,11 +65,24 @@ class Settings(BaseSettings):
     # against the backend package directory.
     UPLOAD_DIR: str = "storage/documents"
     MAX_UPLOAD_BYTES: int = 25 * 1024 * 1024  # 25 MB
-    # Which storage backend serves uploads. `local` writes to UPLOAD_DIR, which is
-    # correct for development and for a deployment with a real persistent disk.
-    # See app/services/storage.py for why this is a setting and not a hard-coded
-    # filesystem call.
-    STORAGE_BACKEND: Literal["local"] = "local"
+    # Which storage backend serves uploads.
+    #   local     -> UPLOAD_DIR on the container filesystem. Correct in
+    #                development, and in production ONLY with a persistent volume.
+    #   supabase  -> a PRIVATE Supabase Storage bucket. Survives redeploys, and is
+    #                the intended production configuration.
+    STORAGE_BACKEND: Literal["local", "supabase"] = "local"
+
+    # --- Supabase Storage ----------------------------------------------------
+    # Used ONLY for private object storage. ANCHOR does not use Supabase Auth, and
+    # does not use the Supabase client for database access — Postgres is reached
+    # through SQLAlchemy on DATABASE_URL exactly as before.
+    #
+    # SUPABASE_SERVICE_ROLE_KEY bypasses row-level security and can read every
+    # object in the project. It is a BACKEND-ONLY secret: it must never be given a
+    # VITE_ prefix, never be sent to the frontend, and never appear in a build.
+    SUPABASE_URL: str | None = None
+    SUPABASE_SERVICE_ROLE_KEY: str | None = None
+    SUPABASE_STORAGE_BUCKET: str = "course-documents"
 
     # --- Rate limiting -------------------------------------------------------
     # Requests per window, per client, per bucket. Generous enough that ordinary
@@ -289,6 +302,35 @@ class Settings(BaseSettings):
                     "localhost. Bearer tokens would travel unencrypted."
                 )
                 break
+
+        if self.STORAGE_BACKEND == "supabase":
+            missing = [
+                name
+                for name, value in (
+                    ("SUPABASE_URL", self.SUPABASE_URL),
+                    ("SUPABASE_SERVICE_ROLE_KEY", self.SUPABASE_SERVICE_ROLE_KEY),
+                    ("SUPABASE_STORAGE_BUCKET", self.SUPABASE_STORAGE_BUCKET),
+                )
+                if not value
+            ]
+            if missing:
+                problems.append(
+                    "STORAGE_BACKEND is 'supabase' but "
+                    + ", ".join(missing)
+                    + " is not set. Uploads would fail on the first request."
+                )
+        elif self.STORAGE_BACKEND == "local":
+            # Not fatal: a host with a persistent volume is a legitimate setup.
+            # But it is the configuration that silently loses a student's uploads
+            # on a platform with an ephemeral disk, so it is worth saying out loud.
+            problems_note = (
+                "STORAGE_BACKEND is 'local' in production. That is correct only if "
+                "a persistent volume is mounted at UPLOAD_DIR; on an ephemeral "
+                "filesystem uploaded documents are lost on every deploy."
+            )
+            import warnings
+
+            warnings.warn(problems_note, RuntimeWarning, stacklevel=2)
 
         if problems:
             joined = "\n  - ".join(problems)

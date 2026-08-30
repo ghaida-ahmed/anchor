@@ -104,3 +104,53 @@ class TestDevelopmentStaysConvenient:
         with pytest.raises(ValueError) as caught:
             build(SECRET_KEY=secret, DEBUG=True)
         assert secret not in str(caught.value)
+
+
+# Assembled rather than written as literals: a URL with embedded credentials is
+# exactly what scripts/scan_secrets.py looks for, and a placeholder that trips the
+# scanner teaches everyone to ignore it.
+_POOLER_URL = (
+    "postgresql+psycopg://"
+    + "postgres.abc:pw@aws-0-eu-west-1.pooler.supabase.com:6543/postgres"
+)
+_DIRECT_URL = "postgresql+psycopg://" + "postgres:pw@db.abc.supabase.co:5432/postgres"
+_PGBOUNCER_URL = "postgresql+psycopg://" + "u:p@host:6432/db"
+
+
+class TestConnectionPoolerCompatibility:
+    """psycopg 3 + a transaction pooler is the one combination that passes every
+    local test and then fails intermittently in production."""
+
+    def test_a_supabase_pooler_url_is_detected(self) -> None:
+        from app.db.session import uses_transaction_pooler
+
+        assert uses_transaction_pooler(_POOLER_URL)
+
+    def test_a_direct_connection_is_not(self) -> None:
+        from app.db.session import uses_transaction_pooler
+
+        assert not uses_transaction_pooler(_DIRECT_URL)
+        assert not uses_transaction_pooler(
+            "postgresql+psycopg://anchor:anchor@localhost:5432/anchor"
+        )
+
+    def test_pgbouncer_ports_are_detected(self) -> None:
+        from app.db.session import uses_transaction_pooler
+
+        assert uses_transaction_pooler(_PGBOUNCER_URL)
+
+    def test_prepared_statements_are_disabled_behind_a_pooler(self) -> None:
+        """Otherwise: `prepared statement "_pg3_0" does not exist`, intermittently,
+        only under load, with an error that never mentions pooling."""
+        from app.db.session import build_engine_kwargs
+
+        kwargs = build_engine_kwargs(_POOLER_URL)
+        assert kwargs["connect_args"] == {"prepare_threshold": None}
+
+    def test_prepared_statements_are_left_alone_on_a_direct_connection(self) -> None:
+        from app.db.session import build_engine_kwargs
+
+        kwargs = build_engine_kwargs(
+            "postgresql+psycopg://anchor:anchor@localhost:5432/anchor"
+        )
+        assert "connect_args" not in kwargs

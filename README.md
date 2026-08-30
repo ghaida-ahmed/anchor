@@ -121,8 +121,8 @@ flowchart TD
 
     API --> STORE
     subgraph STORE["Storage abstraction"]
-        LOCAL["Local filesystem"]
-        OBJ["Object storage<br/>(interface ready)"]
+        LOCAL["Local filesystem<br/>development and tests"]
+        OBJ["Supabase Storage<br/>private bucket, production"]
     end
 
     classDef det fill:#eef6ee,stroke:#5a8a5a,color:#1d3b1d
@@ -161,7 +161,8 @@ A student's uploaded material is private, and the design treats it that way.
 | **Resource enumeration** | Another user's resource returns `404`, not `403` — a 403 confirms the resource exists. |
 | **Passwords** | bcrypt, used directly. Over 72 bytes is rejected rather than silently truncated, which would make two long passwords interchangeable. |
 | **Tokens** | HS256 with the algorithm list pinned at decode, so an `alg: none` token cannot pass. Short-lived, subject-only payload. |
-| **Provider credentials** | Server-side only. The frontend has no reference to any provider key; anything `VITE_*` is compiled into a public bundle and only ever holds the API's own URL. |
+| **Provider credentials** | Server-side only. The frontend has no reference to any provider key; anything `VITE_*` is compiled into a public bundle and only ever holds the API's own URL. The Supabase service role key — which bypasses row-level security — exists only in the backend's environment. |
+| **Private course material** | Uploads go to a **private** Supabase bucket. No public URL and no signed URL is ever minted: bytes stream *through* FastAPI, so the ownership check on the download route stays the only way in. A signed URL would be a bearer credential that outlives the request and cannot be withdrawn. |
 | **Prompt injection** | A student's written answer is untrusted input: fenced, NFKC-normalised against lookalike fence forgery, and the model's verdict validated against *our* stored rubric. A self-contradicting verdict becomes `uncertain` rather than being trusted. |
 | **Uploads** | Extension allow-list, magic-byte check (the browser's MIME type is not trusted), size limit, and a generated storage key — the user's filename never touches the filesystem. |
 | **Errors** | Database driver text and provider exceptions are replaced with safe messages; a traceback would carry local variables, which here means document text. |
@@ -1976,10 +1977,13 @@ DATABASE_URL='postgresql+psycopg://...' python -m alembic upgrade head
   attacker. Running more than one worker multiplies the effective limits, which is
   why the production image runs one.
 - **Local file storage is only correct with a persistent volume.** On an ephemeral
-  filesystem — the default on most free tiers — uploaded documents vanish on every
-  deploy while their database rows survive, leaving courses whose materials 404.
-  The storage interface is ready for object storage; no object-store backend is
-  written, because choosing one is a deployment decision with a bill attached.
+  filesystem uploaded documents vanish on every deploy while their database rows
+  survive. `STORAGE_BACKEND=supabase` is the production answer; `local` remains
+  the development and test backend.
+- **Downloads are buffered, not streamed end to end.** The Supabase backend pulls
+  an object into memory before serving it. Bounded by the 25 MB upload cap, and
+  simpler than keeping a provider response open across the FastAPI response
+  lifecycle — but it is memory per concurrent download, not a constant.
 - **No background job runner.** Document processing, study-guide generation and
   short-answer grading all happen in the request path. A large course makes a slow
   request, and a restart mid-processing leaves a document stuck in `processing`

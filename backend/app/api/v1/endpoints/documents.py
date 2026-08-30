@@ -9,7 +9,7 @@ import os
 import uuid
 
 from fastapi import APIRouter, BackgroundTasks, Depends, File, UploadFile, status
-from fastapi.responses import FileResponse
+from fastapi.responses import StreamingResponse
 
 from app.api.deps import CurrentUser, DocumentProcessorDep, DocumentServiceDep, StorageDep
 from app.core.exceptions import ResourceNotFoundError
@@ -153,28 +153,53 @@ def reprocess_document(
     "/documents/{document_id}/download",
     responses={**_AUTH_RESPONSES, **_NOT_FOUND},
     summary="Download a document's original file",
-    response_class=FileResponse,
+    response_class=StreamingResponse,
 )
 def download_document(
     service: DocumentServiceDep,
     storage: StorageDep,
     user: CurrentUser,
     document_id: uuid.UUID,
-) -> FileResponse:
+) -> StreamingResponse:
     """Serves the stored file so a citation can open its source.
 
     Ownership is checked first; the path comes from the storage layer, never from
     anything the client sent.
     """
+    # Ownership first. `service.get` scopes by user id inside the query, so a
+    # foreign document is a 404 before any storage call happens.
     document = service.get(user.id, document_id)
 
-    if not storage.exists(document.storage_path):
-        raise ResourceNotFoundError("Document file", str(document_id))
+    try:
+        stream = storage.open(document.storage_path)
+    except ResourceNotFoundError as error:
+        # The row exists but the object is gone. Same 404 a foreign document
+        # gives, so the two stay indistinguishable to a client.
+        raise ResourceNotFoundError("Document file", str(document_id)) from error
 
-    return FileResponse(
-        path=storage.get_path(document.storage_path),
-        filename=document.original_filename,
+    # Streamed through the API rather than redirected to a storage URL. The bucket
+    # is private and no signed URL is ever minted: a signed URL is a bearer
+    # credential that outlives the request and cannot be withdrawn, which would
+    # weaken the ownership guarantee this route exists to enforce.
+    return StreamingResponse(
+        stream,
         media_type=MEDIA_TYPES.get(document.file_type.value, "application/octet-stream"),
-        # inline so a browser can display a PDF rather than forcing a save.
-        content_disposition_type="inline",
+        headers={
+            # inline so a browser can display a PDF rather than forcing a save.
+            # The filename is quoted because it is the student's own text.
+            "Content-Disposition": (
+                f'inline; filename="{_safe_filename(document.original_filename)}"'
+            )
+        },
     )
+
+
+def _safe_filename(name: str) -> str:
+    """Make a user-supplied filename safe to place inside a Content-Disposition.
+
+    A quote or newline in the name would let the student break out of the header
+    value and inject another header. Only the display name is affected — the
+    stored key was generated and never came from this string.
+    """
+    cleaned = "".join(ch for ch in name if ch.isprintable() and ch not in '"\\')
+    return cleaned[:120] or "document"
