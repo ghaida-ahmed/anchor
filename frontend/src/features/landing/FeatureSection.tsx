@@ -9,8 +9,6 @@ import {
   Wand2,
 } from 'lucide-react';
 
-import { Badge } from '@/components/ui/Badge';
-
 interface Feature {
   icon: typeof Boxes;
   title: string;
@@ -65,13 +63,12 @@ export function FeatureSection() {
     <section id="features" className="mx-auto max-w-6xl px-6 py-20">
       <div className="flex flex-wrap items-end justify-between gap-4">
         <div>
-          <h2 className="font-serif text-3xl text-ink-900">What ANCHOR will do</h2>
+          <h2 className="font-serif text-3xl text-ink-900">What ANCHOR does</h2>
           <p className="mt-3 max-w-2xl text-ink-600">
-            The full feature set the platform is being built towards. The interface for
-            each is designed; the AI behind them is being implemented in stages.
+            Each of these works from the documents you upload to a course, not from
+            general knowledge.
           </p>
         </div>
-        <Badge tone="brass">In development</Badge>
       </div>
 
       <div className="mt-12 grid gap-x-10 gap-y-9 sm:grid-cols-2 lg:grid-cols-4">

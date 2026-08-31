@@ -1,8 +1,6 @@
 import {
   BookMarked,
-  CalendarClock,
   LayoutDashboard,
-  LineChart,
   LogOut,
   type LucideIcon,
 } from 'lucide-react';
@@ -23,12 +21,6 @@ interface NavItem {
 const PRIMARY_NAV: NavItem[] = [
   { to: paths.dashboard, label: 'Dashboard', icon: LayoutDashboard },
   { to: paths.courses, label: 'Courses', icon: BookMarked },
-];
-
-/** Destinations that exist in the product plan but have no route yet. */
-const PLANNED_NAV: ReadonlyArray<{ label: string; icon: LucideIcon }> = [
-  { label: 'Analytics', icon: LineChart },
-  { label: 'Exam prep', icon: CalendarClock },
 ];
 
 export function AppSidebar() {
@@ -59,20 +51,6 @@ export function AppSidebar() {
             <item.icon className="size-4" strokeWidth={1.75} aria-hidden />
             {item.label}
           </NavLink>
-        ))}
-
-        <p className="px-3 pt-6 pb-2 text-[11px] font-medium tracking-wider text-ink-400 uppercase">
-          Planned
-        </p>
-        {PLANNED_NAV.map((item) => (
-          <span
-            key={item.label}
-            aria-disabled
-            className="flex cursor-not-allowed items-center gap-3 rounded-lg px-3 py-2 text-sm text-ink-300"
-          >
-            <item.icon className="size-4" strokeWidth={1.75} aria-hidden />
-            {item.label}
-          </span>
         ))}
       </nav>
 
