@@ -10,9 +10,6 @@ export function SiteFooter() {
             A study workspace built around your own course materials.
           </p>
         </div>
-        <p className="text-sm text-ink-400">
-          Phase 1 · interface and foundations. AI features are in development.
-        </p>
       </div>
     </footer>
   );
