@@ -221,6 +221,25 @@ can read beats a running service with forgeable tokens.
 After the first deploy, Render shows a URL like
 `https://anchor-api.onrender.com`. You need it for Vercel.
 
+## Migrations come BEFORE the deploy that needs them
+
+> **Learned the hard way.** A schema-dependent change was pushed and Render
+> auto-deployed it before the column existed. Every authenticated read of
+> `courses` returned 500 — while `/api/health` and `/api/ready` stayed green,
+> because neither touches that table. The probes cannot see this class of break.
+>
+> When a change adds or alters a column:
+>
+> 1. run the migration against production **first** (it is additive, so the
+>    currently-deployed code ignores the new column and keeps working);
+> 2. then push, and let the deploy pick it up;
+> 3. verify with an **authenticated** request — `GET /api/v1/courses` — not just
+>    the health probes.
+>
+> With `autoDeploy: true`, pushing first means the window between deploy and
+> migration is an outage. Either migrate first, or turn auto-deploy off for
+> schema changes.
+
 ## 8. Run the migrations — once, explicitly
 
 **ANCHOR never migrates on startup.** On boot it would mean a rollback silently

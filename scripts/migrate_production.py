@@ -101,11 +101,23 @@ def load_url() -> str:
             "  The file is gitignored and must stay on your machine."
         )
 
+    # Tolerant of how the file was actually written: `DATABASE_URL=...`, an
+    # `export` prefix, surrounding quotes, or just the bare URL on its own line.
+    # A credential file is typed by hand under time pressure, and rejecting a
+    # valid connection string over a missing prefix helps nobody.
     url = ""
-    for line in ENV_FILE.read_text().splitlines():
-        line = line.strip()
+    for raw_line in ENV_FILE.read_text().splitlines():
+        line = raw_line.strip().lstrip("\ufeff")
+        if not line or line.startswith("#"):
+            continue
+        if line.startswith("export "):
+            line = line[len("export ") :].strip()
         if line.startswith("DATABASE_URL="):
-            url = line.split("=", 1)[1].strip().strip('"').strip("'")
+            url = line.split("=", 1)[1].strip()
+        elif "://" in line and "=" not in line.split("://", 1)[0]:
+            # A bare connection URL.
+            url = line
+        url = url.strip().strip('"').strip("'")
 
     if not url:
         fail(f"No DATABASE_URL line found in {ENV_FILE.name}.")
