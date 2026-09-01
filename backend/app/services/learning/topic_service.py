@@ -29,6 +29,7 @@ from app.services.learning.grounding import (
     InsufficientMaterialError,
     build_grounding_context,
 )
+from app.services.learning.material import material_fingerprint
 from app.services.learning.prompts import (
     TOPIC_EXTRACTION_SCHEMA,
     TOPIC_EXTRACTION_SYSTEM,
@@ -79,6 +80,23 @@ class TopicExtractionResult:
     @property
     def active(self) -> list[Topic]:
         return [*self.created, *self.reactivated, *self.unchanged]
+
+
+def _advisory_key(course_id: uuid.UUID | str) -> int:
+    """A stable signed 64-bit key for `pg_try_advisory_xact_lock`.
+
+    Postgres advisory locks are keyed by bigint, so the UUID is folded down. A
+    collision between two courses would only ever cost one of them a skipped
+    automatic sync, recoverable with "Update topics" — so 64 bits is ample.
+
+    Accepts a string because course ids arrive from path parameters as well as
+    from ORM columns, and a lock key that works in one caller and raises in the
+    other is the kind of bug that only shows up under concurrency.
+    """
+    identifier = (
+        course_id if isinstance(course_id, uuid.UUID) else uuid.UUID(str(course_id))
+    )
+    return int.from_bytes(identifier.bytes[:8], "big", signed=True)
 
 
 class TopicService:
@@ -263,6 +281,13 @@ class TopicService:
                 topic.is_active = False
                 deactivated.append(topic)
 
+        # Recorded in the same transaction as the topics themselves, so the
+        # course can never claim to be in sync with material it did not extract
+        # from — a crash between the two would otherwise leave exactly that lie.
+        course = self.session.get(Course, course_id)
+        if course is not None:
+            course.topics_fingerprint = material_fingerprint(self.session, course_id)
+
         self.session.commit()
         for topic in [*created, *reactivated, *unchanged, *deactivated]:
             self.session.refresh(topic)
@@ -273,6 +298,64 @@ class TopicService:
             deactivated=deactivated,
             unchanged=unchanged,
         )
+
+    # --- Keeping topics in step with the material ------------------------------
+
+    def topics_are_current(self, course_id: uuid.UUID) -> bool:
+        """Whether the topic set reflects the course's READY documents.
+
+        A course with no processed material is always "current": there is nothing
+        to extract from, so asking the student to update topics would be noise.
+        """
+        has_material = self.session.scalar(
+            select(func.count(Document.id)).where(
+                Document.course_id == course_id,
+                Document.processing_status == ProcessingStatus.READY,
+            )
+        )
+        if not has_material:
+            return True
+
+        course = self.session.get(Course, course_id)
+        if course is None:
+            return True
+        return course.topics_fingerprint == material_fingerprint(self.session, course_id)
+
+    def sync(self, user_id: uuid.UUID, course_id: uuid.UUID) -> bool:
+        """Bring topics in line with the material, if they are not already.
+
+        Returns whether an extraction actually ran. Safe to call repeatedly, and
+        safe to call from two workers at once.
+
+        CONCURRENCY. Two documents finishing together would otherwise both extract,
+        racing on the `(course_id, normalised_name)` unique constraint and spending
+        two Gemini calls for one result. A `SELECT ... FOR UPDATE` on the course row
+        looks like the fix and is a trap: it BLOCKS, so a caller on a second
+        connection waits behind any open transaction holding that row — which
+        deadlocks the request that scheduled it.
+
+        `pg_try_advisory_xact_lock` never blocks. It either takes the lock or
+        reports that someone else has it, and that someone is by definition already
+        doing this work, so skipping is correct rather than merely convenient. The
+        lock is transaction-scoped, so it is released on commit or rollback without
+        any cleanup path to forget.
+        """
+        if self.topics_are_current(course_id):
+            return False
+
+        acquired = self.session.scalar(
+            select(func.pg_try_advisory_xact_lock(_advisory_key(course_id)))
+        )
+        if not acquired:
+            return False
+
+        # Re-check now the lock is held: a worker that finished between the first
+        # check and here has already done this.
+        if self.topics_are_current(course_id):
+            return False
+
+        self.extract(user_id, course_id)
+        return True
 
     def _assert_course_owned(self, user_id: uuid.UUID, course_id: uuid.UUID) -> Course:
         course = self.session.scalar(

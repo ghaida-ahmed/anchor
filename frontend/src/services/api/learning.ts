@@ -413,6 +413,38 @@ export async function fetchTopics(courseId: string): Promise<Topic[]> {
   return dtos.map(toTopic);
 }
 
+export interface TopicSyncStatus {
+  courseId: string;
+  /**
+   * False only when the course has processed material the topic set was not
+   * derived from. A course with nothing processed reports true — there is
+   * nothing to extract, so prompting the student would be noise.
+   */
+  topicsAreCurrent: boolean;
+  topicCount: number;
+  readyDocumentCount: number;
+}
+
+interface TopicSyncStatusDto {
+  course_id: string;
+  topics_are_current: boolean;
+  topic_count: number;
+  ready_document_count: number;
+}
+
+/** Deterministic and cheap — no model call, safe on every page load. */
+export async function fetchTopicSyncStatus(courseId: string): Promise<TopicSyncStatus> {
+  const dto = await apiRequest<TopicSyncStatusDto>(
+    `/v1/courses/${courseId}/topics/status`,
+  );
+  return {
+    courseId: dto.course_id,
+    topicsAreCurrent: dto.topics_are_current,
+    topicCount: dto.topic_count,
+    readyDocumentCount: dto.ready_document_count,
+  };
+}
+
 export interface TopicExtraction {
   created: Topic[];
   reactivated: Topic[];

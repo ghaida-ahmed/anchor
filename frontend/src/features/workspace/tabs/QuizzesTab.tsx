@@ -12,6 +12,7 @@ import { QuizResults } from '@/features/quiz/QuizResults';
 import { QuizRunner } from '@/features/quiz/QuizRunner';
 import { QuizSetup } from '@/features/quiz/QuizSetup';
 import type { WorkspaceTab } from '@/features/workspace/workspaceTabs';
+import { TopicSyncNotice } from '@/features/workspace/TopicSyncNotice';
 import {
   useGenerateQuiz,
   useQuizzes,
@@ -130,6 +131,8 @@ export function QuizzesTab({ courseId, readyCount, onOpenTab }: QuizzesTabProps)
 
   return (
     <div className="space-y-6">
+      <TopicSyncNotice courseId={courseId} />
+
       <QuizSetup
         topics={topics.data ?? []}
         isGenerating={generateQuiz.isPending}

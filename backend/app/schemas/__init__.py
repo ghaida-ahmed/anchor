@@ -33,6 +33,7 @@ from app.schemas.learning import (
     TopicExtractionResponse,
     TopicMasteryRead,
     TopicRead,
+    TopicSyncStatus,
 )
 from app.schemas.rag import (
     AskRequest,
@@ -68,6 +69,7 @@ from app.schemas.study_guide import (
 from app.schemas.user import TimezoneUpdate, UserRead
 
 __all__ = [
+    "TopicSyncStatus",
     "ReadinessResponse",
     "ConceptResultRead",
     "ShortAnswerSubmit",

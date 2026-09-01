@@ -9,6 +9,7 @@ import { ErrorState, FormError } from '@/components/ui/ErrorState';
 import { SectionSpinner, Spinner } from '@/components/ui/Spinner';
 import { BAND_BADGE_TONE } from '@/features/quiz/masteryTone';
 import { SourceLine } from '@/features/quiz/SourceLine';
+import { TopicSyncNotice } from '@/features/workspace/TopicSyncNotice';
 import { useGenerateStudyGuide, useStudyGuide } from '@/hooks/queries/useKnowledge';
 import { formatDate } from '@/lib/format';
 import { toErrorMessage } from '@/services/api/client';
@@ -76,6 +77,7 @@ export function StudyGuideTab({ courseId }: { courseId: string }) {
     return (
       <div className="space-y-6">
         {error ? <FormError message={error} /> : null}
+        <TopicSyncNotice courseId={courseId} />
         <Card>
           <CardHeader
             title="Study guide"
@@ -95,6 +97,8 @@ export function StudyGuideTab({ courseId }: { courseId: string }) {
   return (
     <div className="space-y-6">
       {error ? <FormError message={error} /> : null}
+
+      <TopicSyncNotice courseId={courseId} />
 
       {data.isStale ? (
         <p className="flex items-start gap-2 rounded-card border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-ink-700">

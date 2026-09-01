@@ -17,6 +17,22 @@ export function useTopics(courseId: string | undefined) {
   });
 }
 
+/**
+ * Whether topics reflect the course's processed material.
+ *
+ * Polled while documents are still processing, because topics are extracted
+ * automatically once a document reaches `ready` and the banner should clear
+ * itself without a manual refresh.
+ */
+export function useTopicSyncStatus(courseId: string | undefined, poll = false) {
+  return useQuery({
+    queryKey: queryKeys.topics.syncStatus(courseId ?? ''),
+    queryFn: () => learningApi.fetchTopicSyncStatus(courseId as string),
+    enabled: Boolean(courseId),
+    refetchInterval: poll ? 4000 : false,
+  });
+}
+
 export function useExtractTopics(courseId: string) {
   const queryClient = useQueryClient();
 

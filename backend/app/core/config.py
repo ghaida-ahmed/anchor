@@ -118,6 +118,16 @@ class Settings(BaseSettings):
     RATE_LIMIT_AUTH_PER_MINUTE: int = 10
     RATE_LIMIT_AUTH_PER_HOUR: int = 60
 
+    # Whether a document reaching READY automatically brings the course's topics
+    # up to date. On by default: it is what makes topic extraction invisible to
+    # the student instead of a prerequisite they have to discover.
+    #
+    # Turned off in the test suite, where many cases assert on exact topic sets
+    # and exact model-call counts that a background extraction would invalidate.
+    # Also a genuine operator kill switch if topic extraction ever misbehaves in
+    # production — uploads keep working, and "Update topics" still runs manually.
+    TOPIC_AUTO_SYNC: bool = True
+
     # --- AI cost safeguards --------------------------------------------------
     # Wall-clock ceiling on a single provider call. Without it a hung connection
     # holds a worker until the client gives up.

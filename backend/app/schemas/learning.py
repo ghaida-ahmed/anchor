@@ -43,6 +43,21 @@ class TopicRead(ORMModel):
     created_at: datetime
 
 
+class TopicSyncStatus(BaseModel):
+    """Whether the topic set reflects the course's processed material.
+
+    Read cheaply on page load — it is two queries and a hash, never a model call.
+    """
+
+    course_id: uuid.UUID
+    # False only when there is READY material the topic set was not derived from.
+    # A course with nothing processed yet is reported as in sync: there is nothing
+    # to extract, so prompting the student would be noise.
+    topics_are_current: bool
+    topic_count: int
+    ready_document_count: int
+
+
 class TopicExtractionResponse(BaseModel):
     """What changed, so the UI can explain a regeneration rather than just refresh."""
 

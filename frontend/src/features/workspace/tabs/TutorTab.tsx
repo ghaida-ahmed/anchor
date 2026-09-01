@@ -6,6 +6,7 @@ import { Card } from '@/components/ui/Card';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { FormError } from '@/components/ui/ErrorState';
 import { Spinner } from '@/components/ui/Spinner';
+import { AnswerMarkdown } from '@/features/workspace/AnswerMarkdown';
 import { CitationList } from '@/features/workspace/CitationList';
 import type { WorkspaceTab } from '@/features/workspace/workspaceTabs';
 import { useAskTutor } from '@/hooks/queries/useTutor';
@@ -164,9 +165,7 @@ export function TutorTab({
                     Not found in your materials
                   </p>
                 ) : null}
-                <p className="text-[15px] leading-relaxed whitespace-pre-wrap">
-                  {exchange.answer}
-                </p>
+                <AnswerMarkdown>{exchange.answer}</AnswerMarkdown>
                 <CitationList citations={exchange.citations} />
               </div>
             </div>

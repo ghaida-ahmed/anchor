@@ -11,6 +11,7 @@ import { GapList } from '@/features/knowledge/GapList';
 import { KnowledgeGraph } from '@/features/knowledge/KnowledgeGraph';
 import { KnowledgeList } from '@/features/knowledge/KnowledgeList';
 import { SourceLine } from '@/features/quiz/SourceLine';
+import { TopicSyncNotice } from '@/features/workspace/TopicSyncNotice';
 import {
   useGenerateKnowledgeMap,
   useKnowledgeGaps,
@@ -70,6 +71,8 @@ export function KnowledgeTab({ courseId }: { courseId: string }) {
   return (
     <div className="space-y-6">
       {error ? <FormError message={error} /> : null}
+
+      <TopicSyncNotice courseId={courseId} />
 
       <Card>
         <CardHeader

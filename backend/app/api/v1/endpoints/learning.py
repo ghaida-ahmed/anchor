@@ -9,6 +9,7 @@ queries rather than fetched and checked afterwards.
 import uuid
 
 from fastapi import APIRouter, Depends, status
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.api.deps import (
@@ -27,6 +28,7 @@ from app.models import (
     DocumentChunk,
     Flashcard,
     GradingState,
+    ProcessingStatus,
     QuestionType,
     Quiz,
     QuizAnswer,
@@ -52,6 +54,7 @@ from app.schemas import (
     TopicExtractionResponse,
     TopicRead,
     TopicRetentionRead,
+    TopicSyncStatus,
 )
 from app.services.learning import recommendations as recommender
 from app.services.learning.grounding import page_number_for
@@ -202,6 +205,38 @@ def list_topics(
     include_inactive: bool = False,
 ) -> list[Topic]:
     return service.list_for_course(user.id, course_id, include_inactive=include_inactive)
+
+
+@router.get(
+    "/courses/{course_id}/topics/status",
+    response_model=TopicSyncStatus,
+    responses=_RESPONSES,
+    summary="Whether topics reflect the course's processed material",
+)
+def topic_sync_status(
+    service: TopicServiceDep, session: SessionDep, user: CurrentUser, course_id: uuid.UUID
+) -> TopicSyncStatus:
+    """Deterministic and cheap: no model call, so it is safe on every page load.
+
+    Topics normally update themselves once a document finishes processing. This
+    exists for the cases where that did not happen — no provider configured, a
+    provider outage, a restart mid-processing — so the UI can offer the manual
+    fallback instead of leaving the student to guess.
+    """
+    service._assert_course_owned(user.id, course_id)  # noqa: SLF001 - ownership first
+
+    return TopicSyncStatus(
+        course_id=course_id,
+        topics_are_current=service.topics_are_current(course_id),
+        topic_count=service.count_active(course_id),
+        ready_document_count=session.scalar(
+            select(func.count(Document.id)).where(
+                Document.course_id == course_id,
+                Document.processing_status == ProcessingStatus.READY,
+            )
+        )
+        or 0,
+    )
 
 
 @router.post(

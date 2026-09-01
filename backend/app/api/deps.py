@@ -5,6 +5,7 @@
 changing an id in a URL can never reach another user's data.
 """
 
+from collections.abc import Callable
 from typing import Annotated
 
 from fastapi import Depends
@@ -144,12 +145,24 @@ EmbeddingProviderDep = Annotated[EmbeddingProvider, Depends(get_embeddings)]
 LLMProviderDep = Annotated[LLMProvider, Depends(get_llm)]
 
 
+def get_llm_factory() -> Callable[[], LLMProvider]:
+    """The generation provider's *constructor*, for the same reason
+    `get_embedding_factory` exists: background processing must not build it during
+    request handling, where a missing key would reject the upload instead of
+    letting the document process without the topic step."""
+    return get_llm_provider
+
+
+LLMFactoryDep = Annotated[Callable[[], LLMProvider], Depends(get_llm_factory)]
+
+
 def get_document_processor(
     session_factory: SessionFactoryDep,
     storage: StorageDep,
     embedding_factory: EmbeddingFactoryDep,
+    llm_factory: LLMFactoryDep,
 ) -> DocumentProcessor:
-    return DocumentProcessor(session_factory, storage, embedding_factory)
+    return DocumentProcessor(session_factory, storage, embedding_factory, llm_factory)
 
 
 def get_rag_service(

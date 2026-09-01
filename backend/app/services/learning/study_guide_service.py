@@ -38,11 +38,10 @@ so the guide's text stays put while their progress moves. Freezing a mastery bad
 into generated prose would make the guide wrong the moment they answered a question.
 """
 
-import hashlib
 import uuid
 from dataclasses import dataclass
 
-from sqlalchemy import func, select
+from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
 
 from app.core.clock import now
@@ -50,9 +49,6 @@ from app.core.config import settings
 from app.core.exceptions import ResourceNotFoundError
 from app.models import (
     Course,
-    Document,
-    DocumentChunk,
-    ProcessingStatus,
     StudyGuide,
     StudyGuideSection,
     StudyGuideSectionSource,
@@ -65,6 +61,7 @@ from app.services.learning.grounding import (
     build_grounding_context,
 )
 from app.services.learning.mastery_service import MasteryService
+from app.services.learning.material import material_and_topics_fingerprint
 from app.services.learning.prompts import (
     MAX_SECTION_KEY_CONCEPTS,
     MAX_SECTION_KEY_TERMS,
@@ -416,34 +413,11 @@ class StudyGuideService:
     def _fingerprint(self, course_id: uuid.UUID) -> str:
         """A digest of what the guide would be built from right now.
 
-        Covers the ready documents (id and chunk count) and the active topics.
-        Uploading, deleting or reprocessing a document changes it; so does topic
-        extraction. Answering a quiz does not — mastery is overlaid at read time and
-        has no business marking the text stale.
+        Covers the READY documents *and* the active topics, because a section is
+        written per topic: the guide is stale when either moves. Shared with topic
+        sync so the two cannot drift apart — see services/learning/material.py.
         """
-        documents = self.session.execute(
-            select(Document.id, func.count(DocumentChunk.id))
-            .outerjoin(DocumentChunk, DocumentChunk.document_id == Document.id)
-            .where(
-                Document.course_id == course_id,
-                Document.processing_status == ProcessingStatus.READY,
-            )
-            .group_by(Document.id)
-            .order_by(Document.id)
-        ).all()
-
-        topic_ids = self.session.scalars(
-            select(Topic.id)
-            .where(Topic.course_id == course_id, Topic.is_active.is_(True))
-            .order_by(Topic.id)
-        ).all()
-
-        digest = hashlib.sha256()
-        for document_id, chunk_count in documents:
-            digest.update(f"d:{document_id}:{chunk_count}\n".encode())
-        for topic_id in topic_ids:
-            digest.update(f"t:{topic_id}\n".encode())
-        return digest.hexdigest()
+        return material_and_topics_fingerprint(self.session, course_id)
 
     def _assert_course_owned(self, user_id: uuid.UUID, course_id: uuid.UUID) -> Course:
         course = self.session.scalar(

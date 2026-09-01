@@ -22,11 +22,13 @@ from contextlib import AbstractContextManager
 from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
+from app.core.config import settings
 from app.core.exceptions import AnchorError
 from app.models import Document, DocumentChunk, ProcessingStatus
 from app.services.rag.chunking import chunk_pages
 from app.services.rag.embeddings import EmbeddingProvider
 from app.services.rag.extraction import ExtractionError, get_extractor
+from app.services.rag.generation import LLMProvider
 from app.services.storage import StorageService
 
 logger = logging.getLogger(__name__)
@@ -36,6 +38,7 @@ MAX_ERROR_CHARS = 400
 
 SessionFactory = Callable[[], AbstractContextManager[Session]]
 EmbeddingProviderFactory = Callable[[], EmbeddingProvider]
+LLMProviderFactory = Callable[[], "LLMProvider"]
 
 
 class DocumentProcessor:
@@ -46,9 +49,14 @@ class DocumentProcessor:
         session_factory: SessionFactory,
         storage: StorageService,
         embeddings_factory: EmbeddingProviderFactory,
+        llm_factory: "LLMProviderFactory | None" = None,
     ) -> None:
         self.session_factory = session_factory
         self.storage = storage
+        # Topic extraction needs a generation provider. Optional: without one the
+        # document still processes and only the automatic topic step is skipped,
+        # which the "Update topics" action then covers.
+        self.llm_factory = llm_factory
         # A factory, not an instance: constructing the provider fails when no API
         # key is set, and that must mark the document failed — not break the upload
         # request that scheduled this task.
@@ -139,7 +147,14 @@ class DocumentProcessor:
             # status can never claim readiness the data does not back up.
             document.processing_status = ProcessingStatus.READY
             document.processing_error = None
+            course_id = document.course_id
+            user_id = document.course.user_id
             session.commit()
+
+        # The document is READY and committed before this runs, so a topic failure
+        # can never un-ready it. This is the step that makes topic extraction
+        # automatic instead of a manual prerequisite the student has to know about.
+        self._sync_topics(user_id, course_id, document_id)
 
         logger.info(
             "Processed document %s into %d chunks across %d pages",
@@ -147,6 +162,48 @@ class DocumentProcessor:
             len(chunks),
             len({chunk.page_number for chunk in chunks}),
         )
+
+    def _sync_topics(
+        self, user_id: uuid.UUID, course_id: uuid.UUID, document_id: uuid.UUID
+    ) -> None:
+        """Bring the course's topics in line with its material.
+
+        Deliberately best-effort. A failure here — no API key, a provider outage, a
+        course whose material yields no clear topics — must leave the document
+        READY and the existing topics untouched. The course simply stays flagged as
+        out of sync, and the student can retry with "Update topics".
+        """
+        if not settings.TOPIC_AUTO_SYNC:
+            return
+        if self.llm_factory is None:
+            logger.info(
+                "Skipping topic sync for document %s: no generation provider configured",
+                document_id,
+            )
+            return
+
+        try:
+            from app.services.learning.topic_service import TopicService
+
+            with self.session_factory() as session:
+                extracted = TopicService(session, self.llm_factory()).sync(
+                    user_id, course_id
+                )
+            logger.info(
+                "Topic sync for course %s after document %s: %s",
+                course_id,
+                document_id,
+                "extracted" if extracted else "already current",
+            )
+        except Exception:
+            # Never re-raised: the document is already READY and correct.
+            logger.warning(
+                "Topic sync failed for course %s after document %s; "
+                "topics remain out of sync and can be updated manually",
+                course_id,
+                document_id,
+                exc_info=True,
+            )
 
     def _record_failure(self, document_id: uuid.UUID, message: str) -> None:
         try:

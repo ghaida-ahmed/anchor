@@ -32,6 +32,7 @@ from sqlalchemy.orm import Session
 from app.api.deps import (
     get_embedding_factory,
     get_llm,
+    get_llm_factory,
     get_session_factory,
     get_storage,
 )
@@ -129,6 +130,25 @@ def rate_limits_off(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 @pytest.fixture(autouse=True)
+def disable_automatic_topic_sync(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Keep document processing free of its topic-extraction side effect.
+
+    In production a READY document updates the course's topics automatically. Most
+    tests here upload a document and then assert on an exact topic set, or on how
+    many times the model was called — a background extraction consuming a scripted
+    response invalidates both. Tests that want the behaviour ask for it explicitly
+    with the `automatic_topic_sync` fixture.
+    """
+    monkeypatch.setattr(settings, "TOPIC_AUTO_SYNC", False)
+
+
+@pytest.fixture
+def automatic_topic_sync(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Opt back in, for the tests that exist to cover it."""
+    monkeypatch.setattr(settings, "TOPIC_AUTO_SYNC", True)
+
+
+@pytest.fixture(autouse=True)
 def fake_relevance_threshold(monkeypatch: pytest.MonkeyPatch) -> None:
     """Pin the relevance floor to the fake provider's scale.
 
@@ -194,6 +214,10 @@ def client(
     # Overriding the factory covers both request-time use and background tasks.
     app.dependency_overrides[get_embedding_factory] = lambda: lambda: embeddings
     app.dependency_overrides[get_llm] = lambda: llm
+    # The *factory*, for the background topic sync. Without this the processor
+    # builds a real provider and reaches for the network — see get_embedding_factory
+    # above for the same seam on the embedding side.
+    app.dependency_overrides[get_llm_factory] = lambda: lambda: llm
 
     with TestClient(app) as test_client:
         yield test_client

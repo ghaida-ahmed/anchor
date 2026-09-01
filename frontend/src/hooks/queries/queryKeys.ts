@@ -17,6 +17,8 @@ export const queryKeys = {
   },
   topics: {
     forCourse: (courseId: string) => ['courses', courseId, 'topics'] as const,
+    syncStatus: (courseId: string) =>
+      ['courses', courseId, 'topics', 'status'] as const,
   },
   quizzes: {
     forCourse: (courseId: string) => ['courses', courseId, 'quizzes'] as const,

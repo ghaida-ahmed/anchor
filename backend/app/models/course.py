@@ -34,6 +34,13 @@ class Course(UUIDPrimaryKeyMixin, CreatedAtMixin, UpdatedAtMixin, Base):
     # Optional. A Date, not a timestamp: an exam happens on a day, and storing an
     # instant would invent a precision (and a timezone) the student never gave.
     exam_date: Mapped[date | None] = mapped_column(Date, default=None, nullable=True)
+    # Digest of the READY documents the topic set was last extracted from. Empty
+    # until the first successful extraction. Comparing it with the course's current
+    # material is how ANCHOR knows whether topics are still in sync — see
+    # services/learning/material.py for why this is a digest and not a timestamp.
+    topics_fingerprint: Mapped[str] = mapped_column(
+        String(64), default="", server_default="", nullable=False
+    )
 
     user: Mapped["User"] = relationship(back_populates="courses")
     documents: Mapped[list["Document"]] = relationship(
